@@ -206,16 +206,19 @@ const labelStyle = {
 };
 
 // ── 글쓰기 모달 ───────────────────────────────────────────
-function WriteModal({ user, onClose }) {
+function WriteModal({ user, onClose, editPost = null }) {
   const [form, setForm] = useState({
-    programType: "중기",
-    cohort: "",
-    region: "",
-    category: "후기",
-    title: "",
-    content: "",
-    tags: "",
+    programType: editPost?.programType || "중기",
+    cohort: editPost?.cohort?.toString() || "",
+    region: editPost?.region || "",
+    category: editPost?.category || "후기",
+    title: editPost?.title || "",
+    content: editPost?.content || "",
+    tags: editPost?.tags?.join(", ") || "",
   });
+  const [isAnonymous, setIsAnonymous] = useState(
+    editPost?.isAnonymous || false,
+  );
   const [loading, setLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const currentProgram = PROGRAM_TYPES[form.programType];
@@ -235,7 +238,7 @@ function WriteModal({ user, onClose }) {
     }
     setLoading(true);
     try {
-      await addDoc(collection(db, "posts"), {
+      const data = {
         programType: form.programType,
         cohort: Number(form.cohort),
         region: form.region,
@@ -249,12 +252,23 @@ function WriteModal({ user, onClose }) {
               .filter(Boolean)
           : [],
         authorId: user.uid,
-        authorName: user.displayName,
-        authorPhoto: user.photoURL,
-        likes: 0,
-        commentCount: 0,
-        createdAt: serverTimestamp(),
-      });
+        authorName: isAnonymous ? "익명" : user.displayName,
+        authorPhoto: isAnonymous ? null : user.photoURL,
+        isAnonymous,
+      };
+      if (editPost) {
+        await updateDoc(doc(db, "posts", editPost.id), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await addDoc(collection(db, "posts"), {
+          ...data,
+          likes: 0,
+          commentCount: 0,
+          createdAt: serverTimestamp(),
+        });
+      }
       onClose();
     } catch (e) {
       alert("저장 실패: " + e.message);
@@ -295,9 +309,13 @@ function WriteModal({ user, onClose }) {
             color: "#fff",
           }}
         >
-          <div style={{ fontWeight: 900, fontSize: 20 }}>✏️ 새 글 작성</div>
+          <div style={{ fontWeight: 900, fontSize: 20 }}>
+            {editPost ? "✏️ 글 수정" : "✏️ 새 글 작성"}
+          </div>
           <div style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>
-            경험과 정보를 공유해 후배들에게 도움을 주세요
+            {editPost
+              ? "내용을 수정하고 저장하세요"
+              : "경험과 정보를 공유해 후배들에게 도움을 주세요"}
           </div>
         </div>
         <div
@@ -438,6 +456,54 @@ function WriteModal({ user, onClose }) {
               style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
             />
           </div>
+          {/* 익명 선택 */}
+          <div
+            onClick={() => setIsAnonymous(!isAnonymous)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: `1.5px solid ${isAnonymous ? "#f59e0b" : "#e2e8f0"}`,
+              background: isAnonymous ? "#fffbeb" : "#f8fafc",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                border: `2px solid ${isAnonymous ? "#f59e0b" : "#cbd5e1"}`,
+                background: isAnonymous ? "#f59e0b" : "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {isAnonymous && (
+                <span style={{ color: "#fff", fontSize: 12, fontWeight: 900 }}>
+                  ✓
+                </span>
+              )}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: isAnonymous ? "#92400e" : "#475569",
+                }}
+              >
+                익명으로 게시
+              </div>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
+                작성자 이름과 프로필 사진이 숨겨져요
+              </div>
+            </div>
+          </div>
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button
               onClick={onClose}
@@ -472,7 +538,11 @@ function WriteModal({ user, onClose }) {
                 cursor: loading ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "저장 중..." : "게시하기 🚀"}
+              {loading
+                ? "저장 중..."
+                : editPost
+                  ? "수정 완료 ✅"
+                  : "게시하기 🚀"}
             </button>
           </div>
         </div>
@@ -482,10 +552,11 @@ function WriteModal({ user, onClose }) {
 }
 
 // ── 게시글 카드 ───────────────────────────────────────────
-function PostCard({ post, user, onClick }) {
+function PostCard({ post, user, onClick, onEdit }) {
   const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
   const [liked, setLiked] = useState(false);
+  const isAuthor = user?.uid === post.authorId;
 
   const handleLike = async (e) => {
     e.stopPropagation();
@@ -606,14 +677,38 @@ function PostCard({ post, user, onClick }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Avatar
-            user={{ photoURL: post.authorPhoto, displayName: post.authorName }}
+            user={{
+              photoURL: post.isAnonymous ? null : post.authorPhoto,
+              displayName: post.authorName,
+            }}
             size={24}
           />
           <span style={{ fontSize: 12, color: "#94a3b8" }}>
             {post.authorName} · {timeAgo(post.createdAt)}
+            {post.updatedAt && (
+              <span style={{ color: "#cbd5e1" }}> (수정됨)</span>
+            )}
           </span>
         </div>
-        <div style={{ display: "flex", gap: 14, fontSize: 13 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {isAuthor && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(post);
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#94a3b8",
+                fontSize: 12,
+                padding: 0,
+              }}
+            >
+              수정
+            </button>
+          )}
           <button
             onClick={handleLike}
             style={{
@@ -636,7 +731,7 @@ function PostCard({ post, user, onClick }) {
 }
 
 // ── 상세 모달 ─────────────────────────────────────────────
-function PostModal({ post, user, onClose }) {
+function PostModal({ post, user, onClose, onEdit }) {
   const [comments, setComments] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -751,7 +846,7 @@ function PostModal({ post, user, onClose }) {
           >
             <Avatar
               user={{
-                photoURL: post.authorPhoto,
+                photoURL: post.isAnonymous ? null : post.authorPhoto,
                 displayName: post.authorName,
               }}
               size={32}
@@ -759,9 +854,26 @@ function PostModal({ post, user, onClose }) {
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
                 {post.authorName}
+                {post.isAnonymous && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "#f59e0b",
+                      marginLeft: 6,
+                      background: "#fffbeb",
+                      padding: "1px 7px",
+                      borderRadius: 8,
+                    }}
+                  >
+                    익명
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 11, color: "#94a3b8" }}>
                 {timeAgo(post.createdAt)}
+                {post.updatedAt && (
+                  <span style={{ color: "#cbd5e1" }}> · 수정됨</span>
+                )}
               </div>
             </div>
             <div
@@ -771,8 +883,29 @@ function PostModal({ post, user, onClose }) {
                 gap: 14,
                 fontSize: 13,
                 color: "#94a3b8",
+                alignItems: "center",
               }}
             >
+              {user?.uid === post.authorId && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onEdit(post);
+                  }}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 8,
+                    border: "1.5px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  ✏️ 수정
+                </button>
+              )}
               <span>❤️ {post.likes}</span>
               <span>💬 {post.commentCount || 0}</span>
             </div>
@@ -1237,7 +1370,13 @@ export default function WestApp() {
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [search, setSearch] = useState("");
   const [showWrite, setShowWrite] = useState(false);
+  const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
+
+  const handleEdit = (post) => {
+    setEditPost(post);
+    setShowWrite(true);
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -1616,6 +1755,7 @@ export default function WestApp() {
                 post={p}
                 user={user}
                 onClick={setSelectedPost}
+                onEdit={handleEdit}
               />
             ))
           )}
@@ -1727,6 +1867,7 @@ export default function WestApp() {
                   post={p}
                   user={user}
                   onClick={setSelectedPost}
+                  onEdit={handleEdit}
                 />
               ))
             )}
@@ -1784,6 +1925,7 @@ export default function WestApp() {
                   post={p}
                   user={user}
                   onClick={setSelectedPost}
+                  onEdit={handleEdit}
                 />
               ))
           )}
@@ -1824,13 +1966,21 @@ export default function WestApp() {
       )}
 
       {showWrite && (
-        <WriteModal user={user} onClose={() => setShowWrite(false)} />
+        <WriteModal
+          user={user}
+          editPost={editPost}
+          onClose={() => {
+            setShowWrite(false);
+            setEditPost(null);
+          }}
+        />
       )}
       {selectedPost && (
         <PostModal
           post={selectedPost}
           user={user}
           onClose={() => setSelectedPost(null)}
+          onEdit={handleEdit}
         />
       )}
 
