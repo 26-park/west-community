@@ -22,7 +22,7 @@ import {
 
 // ── Firebase 설정 ──────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "YOUR_NEW_API_KEY", // 새로 발급한 키로 교체
+  apiKey: "AIzaSyCMooXGqenYr9SlbUPvD8Kbg0tHoV_rts0", // 새로 발급한 키로 교체
   authDomain: "west-f026c.firebaseapp.com",
   projectId: "west-f026c",
   storageBucket: "west-f026c.firebasestorage.app",
