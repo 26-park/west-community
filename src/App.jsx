@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -11,7 +11,6 @@ import {
   getFirestore,
   collection,
   addDoc,
-  getDocs,
   query,
   orderBy,
   serverTimestamp,
@@ -19,12 +18,11 @@ import {
   updateDoc,
   increment,
   onSnapshot,
-  where,
 } from "firebase/firestore";
 
 // ── Firebase 설정 ──────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyD1cRE4xMYwwNXoWztZGjBEZNY9fZLLYvY",
+  apiKey: "YOUR_NEW_API_KEY", // 새로 발급한 키로 교체
   authDomain: "west-f026c.firebaseapp.com",
   projectId: "west-f026c",
   storageBucket: "west-f026c.firebasestorage.app",
@@ -37,28 +35,68 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
-// ── 상수 ──────────────────────────────────────────────────
-const COHORTS = Array.from({ length: 14 }, (_, i) => ({
-  id: i + 1,
-  label: `${i + 1}기`,
-  year: 2009 + i,
-  regions: [
-    ["뉴욕", "LA", "시카고"],
-    ["뉴욕", "LA", "시애틀"],
-    ["뉴욕", "LA", "보스턴", "시카고"],
-    ["뉴욕", "LA", "워싱턴DC"],
-    ["뉴욕", "LA", "시카고", "시애틀"],
-    ["뉴욕", "LA", "보스턴"],
-    ["뉴욕", "LA", "시카고", "워싱턴DC"],
-    ["뉴욕", "LA", "시애틀", "보스턴"],
-    ["뉴욕", "LA", "시카고"],
-    ["뉴욕", "LA", "워싱턴DC", "시애틀"],
-    ["뉴욕", "LA", "보스턴", "시카고"],
-    ["뉴욕", "LA", "시카고", "워싱턴DC"],
-    ["뉴욕", "LA", "시애틀", "보스턴", "워싱턴DC"],
-    ["뉴욕", "LA", "시카고", "시애틀", "보스턴", "워싱턴DC"],
-  ][i],
-}));
+// ── 단기/중기/장기 기수 데이터 ────────────────────────────
+const PROGRAM_TYPES = {
+  단기: {
+    label: "단기",
+    duration: "최장 6개월",
+    color: "#0369a1",
+    lightBg: "#f0f9ff",
+    gradient: "linear-gradient(135deg,#0369a1,#38bdf8)",
+    cohorts: Array.from({ length: 22 }, (_, i) => ({
+      id: i + 1,
+      label: `${i + 1}기`,
+      regions: ["뉴욕", "LA", "시카고"].slice(0, 1 + (i % 3)),
+    })),
+  },
+  중기: {
+    label: "중기",
+    duration: "최장 12개월",
+    color: "#1e3a6e",
+    lightBg: "#eff4ff",
+    gradient: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+    cohorts: Array.from({ length: 22 }, (_, i) => ({
+      id: i + 1,
+      label: `${i + 1}기`,
+      regions: [
+        ["뉴욕", "LA", "시카고"],
+        ["뉴욕", "LA", "시애틀"],
+        ["뉴욕", "LA", "보스턴", "시카고"],
+        ["뉴욕", "LA", "워싱턴DC"],
+        ["뉴욕", "LA", "시카고", "시애틀"],
+        ["뉴욕", "LA", "보스턴"],
+        ["뉴욕", "LA", "시카고", "워싱턴DC"],
+        ["뉴욕", "LA", "시애틀", "보스턴"],
+        ["뉴욕", "LA", "시카고"],
+        ["뉴욕", "LA", "워싱턴DC", "시애틀"],
+        ["뉴욕", "LA", "보스턴", "시카고"],
+        ["뉴욕", "LA", "시카고", "워싱턴DC"],
+        ["뉴욕", "LA", "시애틀", "보스턴", "워싱턴DC"],
+        ["뉴욕", "LA", "시카고", "시애틀", "보스턴", "워싱턴DC"],
+        ["뉴욕", "LA", "시카고", "워싱턴DC"],
+        ["뉴욕", "LA", "시애틀", "보스턴"],
+        ["뉴욕", "LA", "시카고", "워싱턴DC", "시애틀"],
+        ["뉴욕", "LA", "보스턴", "시카고"],
+        ["뉴욕", "LA", "시카고", "시애틀"],
+        ["뉴욕", "LA", "워싱턴DC", "보스턴"],
+        ["뉴욕", "LA", "시카고", "시애틀", "워싱턴DC"],
+        ["뉴욕", "LA", "시카고", "시애틀", "보스턴", "워싱턴DC"],
+      ][i],
+    })),
+  },
+  장기: {
+    label: "장기",
+    duration: "최장 18개월",
+    color: "#065f46",
+    lightBg: "#f0fdf4",
+    gradient: "linear-gradient(135deg,#065f46,#10b981)",
+    cohorts: Array.from({ length: 22 }, (_, i) => ({
+      id: i + 1,
+      label: `${i + 1}기`,
+      regions: ["뉴욕", "LA", "시카고"].slice(0, 1 + (i % 2)),
+    })),
+  },
+};
 
 const CATEGORIES = ["후기", "정보", "질문", "팁"];
 const CAT_STYLE = {
@@ -68,7 +106,6 @@ const CAT_STYLE = {
   팁: { bg: "#fce7f3", text: "#9d174d" },
 };
 
-// ── 유틸 ──────────────────────────────────────────────────
 const timeAgo = (ts) => {
   if (!ts) return "";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -79,7 +116,6 @@ const timeAgo = (ts) => {
   return `${Math.floor(diff / 86400)}일 전`;
 };
 
-// ── 소형 컴포넌트 ─────────────────────────────────────────
 function Avatar({ user, size = 32 }) {
   return user?.photoURL ? (
     <img
@@ -152,9 +188,27 @@ function Spinner() {
   );
 }
 
+const inputStyle = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1.5px solid #e2e8f0",
+  fontSize: 14,
+  color: "#1a2340",
+  background: "#f8fafc",
+  width: "100%",
+};
+const labelStyle = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#64748b",
+  display: "block",
+  marginBottom: 6,
+};
+
 // ── 글쓰기 모달 ───────────────────────────────────────────
 function WriteModal({ user, onClose }) {
   const [form, setForm] = useState({
+    programType: "중기",
     cohort: "",
     region: "",
     category: "후기",
@@ -163,8 +217,11 @@ function WriteModal({ user, onClose }) {
     tags: "",
   });
   const [loading, setLoading] = useState(false);
-  const cohort = COHORTS.find((c) => c.id === Number(form.cohort));
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const currentProgram = PROGRAM_TYPES[form.programType];
+  const cohort = currentProgram.cohorts.find(
+    (c) => c.id === Number(form.cohort),
+  );
 
   const submit = async () => {
     if (
@@ -173,12 +230,13 @@ function WriteModal({ user, onClose }) {
       !form.title.trim() ||
       !form.content.trim()
     ) {
-      alert("기수, 지역, 제목, 내용을 모두 입력해주세요");
+      alert("모든 항목을 입력해주세요");
       return;
     }
     setLoading(true);
     try {
       await addDoc(collection(db, "posts"), {
+        programType: form.programType,
         cohort: Number(form.cohort),
         region: form.region,
         category: form.category,
@@ -250,50 +308,78 @@ function WriteModal({ user, onClose }) {
             gap: 16,
           }}
         >
+          <div>
+            <label style={labelStyle}>프로그램 유형 *</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {Object.entries(PROGRAM_TYPES).map(([type, val]) => (
+                <button
+                  key={type}
+                  onClick={() => {
+                    set("programType", type);
+                    set("cohort", "");
+                    set("region", "");
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "10px 6px",
+                    borderRadius: 12,
+                    border: "1.5px solid",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: form.programType === type ? 800 : 400,
+                    borderColor:
+                      form.programType === type ? val.color : "#e2e8f0",
+                    background:
+                      form.programType === type ? val.lightBg : "#fff",
+                    color: form.programType === type ? val.color : "#64748b",
+                    textAlign: "center",
+                  }}
+                >
+                  {type}
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>
+                    {val.duration}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
           >
-            {[
-              [
-                "기수",
-                <select
-                  value={form.cohort}
-                  onChange={(e) => {
-                    set("cohort", e.target.value);
-                    set("region", "");
-                  }}
-                  style={inputStyle}
-                >
-                  <option value="">선택</option>
-                  {COHORTS.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label} ({c.year})
-                    </option>
-                  ))}
-                </select>,
-              ],
-              [
-                "지역",
-                <select
-                  value={form.region}
-                  onChange={(e) => set("region", e.target.value)}
-                  style={inputStyle}
-                  disabled={!cohort}
-                >
-                  <option value="">선택</option>
-                  {(cohort?.regions || []).map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>,
-              ],
-            ].map(([label, el]) => (
-              <div key={label}>
-                <label style={labelStyle}>{label} *</label>
-                {el}
-              </div>
-            ))}
+            <div>
+              <label style={labelStyle}>기수 *</label>
+              <select
+                value={form.cohort}
+                onChange={(e) => {
+                  set("cohort", e.target.value);
+                  set("region", "");
+                }}
+                style={inputStyle}
+              >
+                <option value="">선택</option>
+                {currentProgram.cohorts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>지역 *</label>
+              <select
+                value={form.region}
+                onChange={(e) => set("region", e.target.value)}
+                style={inputStyle}
+                disabled={!cohort}
+              >
+                <option value="">선택</option>
+                {(cohort?.regions || []).map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label style={labelStyle}>카테고리</label>
@@ -395,26 +481,10 @@ function WriteModal({ user, onClose }) {
   );
 }
 
-const inputStyle = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1.5px solid #e2e8f0",
-  fontSize: 14,
-  color: "#1a2340",
-  background: "#f8fafc",
-  width: "100%",
-};
-const labelStyle = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#64748b",
-  display: "block",
-  marginBottom: 6,
-};
-
 // ── 게시글 카드 ───────────────────────────────────────────
 function PostCard({ post, user, onClick }) {
   const cat = CAT_STYLE[post.category] || {};
+  const pt = PROGRAM_TYPES[post.programType];
   const [liked, setLiked] = useState(false);
 
   const handleLike = async (e) => {
@@ -460,6 +530,11 @@ function PostCard({ post, user, onClick }) {
           alignItems: "center",
         }}
       >
+        {pt && (
+          <Badge bg={pt.color} color="#fff">
+            {post.programType}
+          </Badge>
+        )}
         <Badge bg="#1e3a6e" color="#fff">
           {post.cohort}기
         </Badge>
@@ -538,9 +613,7 @@ function PostCard({ post, user, onClick }) {
             {post.authorName} · {timeAgo(post.createdAt)}
           </span>
         </div>
-        <div
-          style={{ display: "flex", gap: 14, fontSize: 13, color: "#94a3b8" }}
-        >
+        <div style={{ display: "flex", gap: 14, fontSize: 13 }}>
           <button
             onClick={handleLike}
             style={{
@@ -555,7 +628,7 @@ function PostCard({ post, user, onClick }) {
           >
             {liked ? "❤️" : "🤍"} {post.likes + (liked ? 1 : 0)}
           </button>
-          <span>💬 {post.commentCount || 0}</span>
+          <span style={{ color: "#94a3b8" }}>💬 {post.commentCount || 0}</span>
         </div>
       </div>
     </div>
@@ -568,6 +641,7 @@ function PostModal({ post, user, onClose }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const cat = CAT_STYLE[post.category] || {};
+  const pt = PROGRAM_TYPES[post.programType];
 
   useEffect(() => {
     const q = query(
@@ -639,6 +713,11 @@ function PostModal({ post, user, onClose }) {
               flexWrap: "wrap",
             }}
           >
+            {pt && (
+              <Badge bg={pt.color} color="#fff">
+                {post.programType}
+              </Badge>
+            )}
             <Badge bg="#1e3a6e" color="#fff">
               {post.cohort}기
             </Badge>
@@ -796,8 +875,8 @@ function PostModal({ post, user, onClose }) {
               }
               placeholder={
                 user
-                  ? "댓글을 입력하세요... (Enter로 등록)"
-                  : "로그인 후 댓글을 작성할 수 있어요"
+                  ? "댓글 입력... (Enter로 등록)"
+                  : "로그인 후 댓글 작성 가능"
               }
               style={{
                 flex: 1,
@@ -853,15 +932,27 @@ function PostModal({ post, user, onClose }) {
   );
 }
 
-// ── 사이드바 ──────────────────────────────────────────────
+// ── 커뮤니티 사이드바 ─────────────────────────────────────
 function Sidebar({
+  selectedProgramType,
+  setSelectedProgramType,
   selectedCohort,
   setSelectedCohort,
   selectedRegion,
   setSelectedRegion,
 }) {
-  const cohort = COHORTS.find((c) => c.id === selectedCohort);
-  const menuItem = (label, active, onClick, sub) => (
+  const program = selectedProgramType
+    ? PROGRAM_TYPES[selectedProgramType]
+    : null;
+  const cohort = program?.cohorts.find((c) => c.id === selectedCohort);
+
+  const menuItem = (
+    label,
+    active,
+    onClick,
+    color = "#2d5be3",
+    lightBg = "#eff4ff",
+  ) => (
     <div
       onClick={onClick}
       style={{
@@ -869,15 +960,16 @@ function Sidebar({
         cursor: "pointer",
         fontSize: 13,
         fontWeight: active ? 700 : 400,
-        color: active ? (sub ? "#0369a1" : "#1e3a6e") : "#475569",
-        background: active ? (sub ? "#f0f9ff" : "#eff4ff") : "transparent",
-        borderLeft: `3px solid ${active ? (sub ? "#38bdf8" : "#2d5be3") : "transparent"}`,
+        color: active ? color : "#475569",
+        background: active ? lightBg : "transparent",
+        borderLeft: `3px solid ${active ? color : "transparent"}`,
         transition: "all 0.15s",
       }}
     >
       {label}
     </div>
   );
+
   return (
     <div style={{ width: 210, flexShrink: 0 }}>
       <div
@@ -896,24 +988,78 @@ function Sidebar({
             color: "#fff",
             fontWeight: 800,
             fontSize: 13,
-            letterSpacing: "0.06em",
           }}
         >
-          기수 선택
+          프로그램 유형
         </div>
-        <div style={{ maxHeight: 280, overflowY: "auto", padding: "6px 0" }}>
-          {menuItem("전체 기수", !selectedCohort, () => {
+        <div style={{ padding: "6px 0" }}>
+          {menuItem("전체", !selectedProgramType, () => {
+            setSelectedProgramType(null);
             setSelectedCohort(null);
             setSelectedRegion(null);
           })}
-          {COHORTS.map((c) =>
-            menuItem(`${c.label}  (${c.year})`, selectedCohort === c.id, () => {
-              setSelectedCohort(c.id);
-              setSelectedRegion(null);
-            }),
+          {Object.entries(PROGRAM_TYPES).map(([key, val]) =>
+            menuItem(
+              `${key} · ${val.duration}`,
+              selectedProgramType === key,
+              () => {
+                setSelectedProgramType(key);
+                setSelectedCohort(null);
+                setSelectedRegion(null);
+              },
+              val.color,
+              val.lightBg,
+            ),
           )}
         </div>
       </div>
+      {program && (
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 16,
+            border: "1.5px solid #e8ecf3",
+            overflow: "hidden",
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              background: program.gradient,
+              padding: "14px 18px",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 13,
+            }}
+          >
+            {selectedProgramType} 기수
+          </div>
+          <div style={{ maxHeight: 220, overflowY: "auto", padding: "6px 0" }}>
+            {menuItem(
+              "전체 기수",
+              !selectedCohort,
+              () => {
+                setSelectedCohort(null);
+                setSelectedRegion(null);
+              },
+              program.color,
+              program.lightBg,
+            )}
+            {program.cohorts.map((c) =>
+              menuItem(
+                c.label,
+                selectedCohort === c.id,
+                () => {
+                  setSelectedCohort(c.id);
+                  setSelectedRegion(null);
+                },
+                program.color,
+                program.lightBg,
+              ),
+            )}
+          </div>
+        </div>
+      )}
       {cohort && (
         <div
           style={{
@@ -925,33 +1071,155 @@ function Sidebar({
         >
           <div
             style={{
-              background: "linear-gradient(135deg,#0f4c8a,#38bdf8)",
+              background: program.gradient,
               padding: "14px 18px",
               color: "#fff",
               fontWeight: 800,
               fontSize: 13,
             }}
           >
-            {cohort.label} 지역
+            {selectedCohort}기 지역
           </div>
           <div style={{ padding: "6px 0" }}>
             {menuItem(
               "전체 지역",
               !selectedRegion,
               () => setSelectedRegion(null),
-              true,
+              program.color,
+              program.lightBg,
             )}
             {cohort.regions.map((r) =>
               menuItem(
                 `📍 ${r}`,
                 selectedRegion === r,
                 () => setSelectedRegion(r),
-                true,
+                program.color,
+                program.lightBg,
               ),
             )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 기수정보 3열 컬럼 ─────────────────────────────────────
+function CohortColumn({ type, posts, onSelect }) {
+  const program = PROGRAM_TYPES[type];
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        style={{
+          background: program.gradient,
+          borderRadius: "16px 16px 0 0",
+          padding: "20px",
+          color: "#fff",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: 20 }}>{type}</div>
+        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+          {program.duration}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
+          1기 ~ 22기
+        </div>
+      </div>
+      <div
+        style={{
+          background: "#fff",
+          border: "1.5px solid #e8ecf3",
+          borderTop: "none",
+          borderRadius: "0 0 16px 16px",
+          overflow: "hidden",
+        }}
+      >
+        {program.cohorts.map((c, idx) => {
+          const count = posts.filter(
+            (p) => p.programType === type && p.cohort === c.id,
+          ).length;
+          return (
+            <div
+              key={c.id}
+              onClick={() => onSelect(type, c.id)}
+              style={{
+                padding: "11px 16px",
+                borderBottom:
+                  idx < program.cohorts.length - 1
+                    ? "1px solid #f1f5f9"
+                    : "none",
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = program.lightBg)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "transparent")
+              }
+            >
+              <div>
+                <div
+                  style={{ fontWeight: 700, fontSize: 13, color: "#1a2340" }}
+                >
+                  {c.label}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 3,
+                    flexWrap: "wrap",
+                    marginTop: 3,
+                  }}
+                >
+                  {c.regions.map((r) => (
+                    <span
+                      key={r}
+                      style={{
+                        fontSize: 10,
+                        color: program.color,
+                        background: program.lightBg,
+                        padding: "1px 5px",
+                        borderRadius: 5,
+                      }}
+                    >
+                      📍{r}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-end",
+                  gap: 3,
+                }}
+              >
+                {count > 0 && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      background: program.color,
+                      color: "#fff",
+                      padding: "1px 7px",
+                      borderRadius: 8,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {count}개
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: program.color }}>→</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -963,6 +1231,7 @@ export default function WestApp() {
   const [tab, setTab] = useState("home");
   const [posts, setPosts] = useState([]);
   const [postsLoading, setPostsLoading] = useState(true);
+  const [selectedProgramType, setSelectedProgramType] = useState(null);
   const [selectedCohort, setSelectedCohort] = useState(null);
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("전체");
@@ -970,7 +1239,6 @@ export default function WestApp() {
   const [showWrite, setShowWrite] = useState(false);
   const [selectedPost, setSelectedPost] = useState(null);
 
-  // Auth 상태 감지
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -979,7 +1247,6 @@ export default function WestApp() {
     return unsub;
   }, []);
 
-  // 게시글 실시간 구독
   useEffect(() => {
     setPostsLoading(true);
     const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
@@ -994,6 +1261,8 @@ export default function WestApp() {
   const logout = () => signOut(auth);
 
   const filtered = posts.filter((p) => {
+    if (selectedProgramType && p.programType !== selectedProgramType)
+      return false;
     if (selectedCohort && p.cohort !== selectedCohort) return false;
     if (selectedRegion && p.region !== selectedRegion) return false;
     if (selectedCategory !== "전체" && p.category !== selectedCategory)
@@ -1012,6 +1281,13 @@ export default function WestApp() {
     .sort((a, b) => (b.likes || 0) - (a.likes || 0))
     .slice(0, 3);
 
+  const handleCohortSelect = (type, cohortId) => {
+    setSelectedProgramType(type);
+    setSelectedCohort(cohortId);
+    setSelectedRegion(null);
+    setTab("community");
+  };
+
   if (authLoading)
     return (
       <div
@@ -1020,7 +1296,6 @@ export default function WestApp() {
           alignItems: "center",
           justifyContent: "center",
           height: "100vh",
-          background: "#f4f7fb",
         }}
       >
         <Spinner />
@@ -1049,7 +1324,7 @@ export default function WestApp() {
       >
         <div
           style={{
-            maxWidth: 1100,
+            maxWidth: 1200,
             margin: "0 auto",
             padding: "0 20px",
             display: "flex",
@@ -1095,13 +1370,7 @@ export default function WestApp() {
               >
                 WEST 커뮤니티
               </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "#94a3b8",
-                  letterSpacing: "0.04em",
-                }}
-              >
+              <div style={{ fontSize: 10, color: "#94a3b8" }}>
                 Work & English Study in the US
               </div>
             </div>
@@ -1125,7 +1394,6 @@ export default function WestApp() {
                   fontWeight: tab === key ? 700 : 400,
                   background: tab === key ? "#eff4ff" : "transparent",
                   color: tab === key ? "#1e3a6e" : "#64748b",
-                  transition: "all 0.15s",
                 }}
               >
                 {label}
@@ -1176,11 +1444,9 @@ export default function WestApp() {
                 borderRadius: 10,
                 border: "1.5px solid #e2e8f0",
                 background: "#fff",
-                color: "#1a2340",
                 fontWeight: 700,
                 fontSize: 13,
                 cursor: "pointer",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
               }}
             >
               <img
@@ -1200,8 +1466,7 @@ export default function WestApp() {
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px" }}>
           <div
             style={{
-              background:
-                "linear-gradient(135deg,#1e3a6e 0%,#1565c0 50%,#2d5be3 100%)",
+              background: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
               borderRadius: 24,
               padding: "48px 40px",
               color: "#fff",
@@ -1223,17 +1488,6 @@ export default function WestApp() {
             />
             <div
               style={{
-                position: "absolute",
-                right: 60,
-                bottom: -60,
-                width: 160,
-                height: 160,
-                background: "rgba(255,255,255,0.04)",
-                borderRadius: "50%",
-              }}
-            />
-            <div
-              style={{
                 fontSize: 12,
                 letterSpacing: "0.2em",
                 opacity: 0.7,
@@ -1241,7 +1495,7 @@ export default function WestApp() {
                 fontWeight: 600,
               }}
             >
-              🇺🇸 WEST PROGRAM COMMUNITY · 1기~14기
+              🇺🇸 WEST PROGRAM COMMUNITY
             </div>
             <div
               style={{
@@ -1263,7 +1517,7 @@ export default function WestApp() {
                 marginBottom: 28,
               }}
             >
-              기수별·지역별 합격 후기, 생활 정보, 꿀팁을
+              단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
               <br />
               선배들이 직접 공유하는 커뮤니티입니다
             </div>
@@ -1283,54 +1537,36 @@ export default function WestApp() {
               >
                 커뮤니티 보기 →
               </button>
-              {user ? (
-                <button
-                  onClick={() => setShowWrite(true)}
-                  style={{
-                    padding: "11px 26px",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.15)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    fontSize: 14,
-                    border: "1.5px solid rgba(255,255,255,0.3)",
-                    cursor: "pointer",
-                  }}
-                >
-                  후기 작성하기
-                </button>
-              ) : (
-                <button
-                  onClick={login}
-                  style={{
-                    padding: "11px 26px",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.15)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    fontSize: 14,
-                    border: "1.5px solid rgba(255,255,255,0.3)",
-                    cursor: "pointer",
-                  }}
-                >
-                  Google로 시작하기
-                </button>
-              )}
+              <button
+                onClick={() => (user ? setShowWrite(true) : login())}
+                style={{
+                  padding: "11px 26px",
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  border: "1.5px solid rgba(255,255,255,0.3)",
+                  cursor: "pointer",
+                }}
+              >
+                {user ? "후기 작성하기" : "Google로 시작하기"}
+              </button>
             </div>
           </div>
+
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4,1fr)",
+              gridTemplateColumns: "repeat(3,1fr)",
               gap: 14,
-              marginBottom: 36,
+              marginBottom: 32,
             }}
           >
             {[
               ["📝", posts.length, "총 게시글"],
-              ["🎓", "14기", "최신 기수"],
-              ["📍", "6개", "파견 지역"],
-              ["👥", "무제한", "커뮤니티"],
+              ["🎓", "단기 10기 · 중기 14기 · 장기 10기", "진행중인 기수"],
+              ["📍", "파견지역", "뉴욕, LA, 시카고, 시애틀, 보스턴, 워싱턴DC"],
             ].map(([icon, val, label]) => (
               <div
                 key={label}
@@ -1354,14 +1590,8 @@ export default function WestApp() {
               </div>
             ))}
           </div>
-          <div
-            style={{
-              fontWeight: 800,
-              fontSize: 18,
-              marginBottom: 16,
-              color: "#1a2340",
-            }}
-          >
+
+          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 16 }}>
             🔥 인기 글
           </div>
           {postsLoading ? (
@@ -1396,7 +1626,7 @@ export default function WestApp() {
       {tab === "community" && (
         <div
           style={{
-            maxWidth: 1100,
+            maxWidth: 1200,
             margin: "0 auto",
             padding: "32px 20px",
             display: "flex",
@@ -1405,6 +1635,8 @@ export default function WestApp() {
           }}
         >
           <Sidebar
+            selectedProgramType={selectedProgramType}
+            setSelectedProgramType={setSelectedProgramType}
             selectedCohort={selectedCohort}
             setSelectedCohort={setSelectedCohort}
             selectedRegion={selectedRegion}
@@ -1502,130 +1734,31 @@ export default function WestApp() {
         </div>
       )}
 
-      {/* INFO */}
+      {/* INFO - 단기/중기/장기 3열 */}
       {tab === "info" && (
-        <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>
           <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
             📋 기수별 정보
           </div>
           <div style={{ color: "#64748b", fontSize: 14, marginBottom: 24 }}>
-            1기(2009)부터 14기까지 파견 지역과 게시글을 확인하세요
+            단기·중기·장기 프로그램별로 1기부터 22기까지 확인하세요. 기수를
+            클릭하면 해당 게시판으로 이동해요.
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(270px,1fr))",
-              gap: 16,
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 20,
             }}
           >
-            {COHORTS.map((c) => {
-              const count = posts.filter((p) => p.cohort === c.id).length;
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => {
-                    setSelectedCohort(c.id);
-                    setSelectedRegion(null);
-                    setTab("community");
-                  }}
-                  style={{
-                    background: "#fff",
-                    borderRadius: 16,
-                    border: "1.5px solid #e8ecf3",
-                    overflow: "hidden",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translateY(-3px)";
-                    e.currentTarget.style.boxShadow =
-                      "0 10px 32px rgba(30,60,120,0.12)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "";
-                    e.currentTarget.style.boxShadow = "";
-                  }}
-                >
-                  <div
-                    style={{
-                      background: `linear-gradient(135deg, hsl(${210 + c.id * 5},65%,28%), hsl(${220 + c.id * 5},75%,48%))`,
-                      padding: "18px 20px",
-                      color: "#fff",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 900, fontSize: 24 }}>
-                        {c.label}
-                      </div>
-                      <div
-                        style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}
-                      >
-                        {c.year}년
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        background: "rgba(255,255,255,0.15)",
-                        borderRadius: 10,
-                        padding: "5px 12px",
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      게시판 →
-                    </div>
-                  </div>
-                  <div style={{ padding: "16px 20px" }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#64748b",
-                        fontWeight: 700,
-                        marginBottom: 10,
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      파견 지역
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {c.regions.map((r) => (
-                        <span
-                          key={r}
-                          style={{
-                            fontSize: 12,
-                            background: "#f0f4ff",
-                            color: "#3b5bdb",
-                            padding: "3px 9px",
-                            borderRadius: 8,
-                          }}
-                        >
-                          📍{r}
-                        </span>
-                      ))}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 14,
-                        paddingTop: 12,
-                        borderTop: "1px solid #f1f5f9",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12,
-                        color: "#94a3b8",
-                      }}
-                    >
-                      <span>게시글 {count}개</span>
-                      <span style={{ color: "#3b5bdb", fontWeight: 600 }}>
-                        자세히 보기 →
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {["단기", "중기", "장기"].map((type) => (
+              <CohortColumn
+                key={type}
+                type={type}
+                posts={posts}
+                onSelect={handleCohortSelect}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -1715,7 +1848,9 @@ export default function WestApp() {
         <div style={{ fontWeight: 800, color: "#1e3a6e", marginBottom: 4 }}>
           WEST 커뮤니티
         </div>
-        <div>Work & English Study in the US · 1기~14기 비공식 커뮤니티</div>
+        <div>
+          Work & English Study in the US · 단기·중기·장기 비공식 커뮤니티
+        </div>
         <div style={{ marginTop: 6, fontSize: 11 }}>
           Firebase Firestore 실시간 연동 · Google 소셜 로그인
         </div>
