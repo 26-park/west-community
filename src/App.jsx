@@ -2630,7 +2630,7 @@ export default function WestApp() {
                 }}
                 className="nav-subtitle"
               >
-                Work & English Study in the US
+                Work, English Study, travel in the US
               </div>
             </div>
           </div>
@@ -2732,102 +2732,11 @@ export default function WestApp() {
       {/* HOME */}
       {tab === "home" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px" }}>
-          <div
-            style={{
-              background: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
-              borderRadius: isMobile ? 16 : 24,
-              padding: isMobile ? "32px 20px" : "48px 40px",
-              color: "#fff",
-              marginBottom: 32,
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                right: -40,
-                top: -40,
-                width: 220,
-                height: 220,
-                background: "rgba(255,255,255,0.04)",
-                borderRadius: "50%",
-              }}
-            />
-            <div
-              style={{
-                fontSize: isMobile ? 10 : 12,
-                letterSpacing: "0.2em",
-                opacity: 0.7,
-                marginBottom: 12,
-                fontWeight: 600,
-              }}
-            >
-              🇺🇸 WEST PROGRAM COMMUNITY
-            </div>
-            <div
-              style={{
-                fontWeight: 900,
-                fontSize: "clamp(22px,4vw,34px)",
-                lineHeight: 1.25,
-                marginBottom: 14,
-              }}
-            >
-              WEST 정보,
-              <br />
-              이제 한 곳에서 찾으세요
-            </div>
-            <div
-              style={{
-                fontSize: isMobile ? 13 : 15,
-                opacity: 0.85,
-                lineHeight: 1.75,
-                marginBottom: 28,
-              }}
-            >
-              {isMobile ? (
-                "단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을 선배들이 직접 공유하는 커뮤니티입니다"
-              ) : (
-                <>
-                  단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
-                  <br />
-                  선배들이 직접 공유하는 커뮤니티입니다
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setTab("community")}
-                style={{
-                  padding: "11px 26px",
-                  borderRadius: 12,
-                  background: "#fff",
-                  color: "#1e3a6e",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                커뮤니티 보기 →
-              </button>
-              <button
-                onClick={() => (user ? setShowWrite(true) : login())}
-                style={{
-                  padding: "11px 26px",
-                  borderRadius: 12,
-                  background: "rgba(255,255,255,0.15)",
-                  color: "#fff",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  border: "1.5px solid rgba(255,255,255,0.3)",
-                  cursor: "pointer",
-                }}
-              >
-                {user ? "후기 작성하기" : "Google로 시작하기"}
-              </button>
-            </div>
-          </div>
+          <HeroBanner
+            user={user}
+            onCommunity={() => setTab("community")}
+            onWrite={() => (user ? setShowWrite(true) : login())}
+          />
 
           <div
             style={{
@@ -2839,7 +2748,7 @@ export default function WestApp() {
           >
             {[
               ["📝", posts.length, "총 게시글"],
-              ["🎓", "단기 10기 · 중기 14기 · 장기 10기", "진행중인 기수"],
+              ["🎓", "단기 14기 · 중기 14기 · 장기 22기", "진행중인 기수"],
               ["📍", "파견지역", "뉴욕, LA, 시카고, 시애틀, 보스턴, 워싱턴DC"],
             ].map(([icon, val, label]) => (
               <div
@@ -3150,7 +3059,7 @@ export default function WestApp() {
           WEST 커뮤니티
         </div>
         <div>
-          Work & English Study in the US · 단기·중기·장기 비공식 커뮤니티
+          Work, English Study, travel in the US · 단기·중기·장기 비공식 커뮤니티
         </div>
         <div style={{ marginTop: 6, fontSize: 11 }}>
           Firebase Firestore 실시간 연동 · Google 소셜 로그인
