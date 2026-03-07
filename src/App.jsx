@@ -15,6 +15,8 @@ import {
   orderBy,
   serverTimestamp,
   doc,
+  getDoc,
+  setDoc,
   updateDoc,
   increment,
   onSnapshot,
@@ -206,6 +208,712 @@ const labelStyle = {
   display: "block",
   marginBottom: 6,
 };
+
+// ── 관리자 UID (본인 uid로 교체) ──────────────────────────
+const ADMIN_UID = "6CgsiLklPVWTa2eyL911DgAmG6g1"; // Firebase Auth에서 본인 uid 복사해서 넣기
+
+// ── 프로필 모달 ───────────────────────────────────────────
+function ProfileModal({ user, onClose }) {
+  const [profile, setProfile] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    bio: "",
+    programType: "중기",
+    cohort: "",
+    region: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const currentProgram = PROGRAM_TYPES[form.programType];
+  const cohort = currentProgram?.cohorts.find(
+    (c) => c.id === Number(form.cohort),
+  );
+
+  useEffect(() => {
+    const load = async () => {
+      const snap = await getDoc(doc(db, "users", user.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        setProfile(data);
+        setForm({
+          bio: data.bio || "",
+          programType: data.programType || "중기",
+          cohort: data.cohort?.toString() || "",
+          region: data.region || "",
+        });
+      } else {
+        setEditing(true);
+      }
+    };
+    load();
+  }, [user.uid]);
+
+  const save = async () => {
+    if (!form.programType || !form.cohort || !form.region) {
+      alert("기수와 지역을 선택해주세요");
+      return;
+    }
+    setLoading(true);
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        bio: form.bio,
+        programType: form.programType,
+        cohort: Number(form.cohort),
+        region: form.region,
+        isVerified: profile?.isVerified || false,
+        verifyStatus: profile?.verifyStatus || null,
+        updatedAt: serverTimestamp(),
+        createdAt: profile?.createdAt || serverTimestamp(),
+      });
+      const snap = await getDoc(doc(db, "users", user.uid));
+      setProfile(snap.data());
+      setEditing(false);
+    } catch (e) {
+      alert("저장 실패: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const requestVerify = async () => {
+    if (profile?.verifyStatus === "pending") {
+      alert("이미 인증 신청 중이에요!");
+      return;
+    }
+    if (profile?.isVerified) {
+      alert("이미 인증된 계정이에요!");
+      return;
+    }
+    if (!profile?.cohort) {
+      alert("먼저 프로필을 저장해주세요!");
+      return;
+    }
+    setVerifyLoading(true);
+    try {
+      await updateDoc(doc(db, "users", user.uid), { verifyStatus: "pending" });
+      await addDoc(collection(db, "verifyRequests"), {
+        uid: user.uid,
+        displayName: user.displayName,
+        programType: profile.programType,
+        cohort: profile.cohort,
+        region: profile.region,
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+      setProfile((p) => ({ ...p, verifyStatus: "pending" }));
+      alert("인증 신청 완료! 관리자 검토 후 승인돼요 😊");
+    } catch (e) {
+      alert("신청 실패: " + e.message);
+    }
+    setVerifyLoading(false);
+  };
+
+  const pt = profile?.programType ? PROGRAM_TYPES[profile.programType] : null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,20,50,0.55)",
+        zIndex: 200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        backdropFilter: "blur(4px)",
+      }}
+    >
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 24,
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "92vh",
+          overflowY: "auto",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.22)",
+        }}
+      >
+        {/* 헤더 */}
+        <div
+          style={{
+            background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+            borderRadius: "24px 24px 0 0",
+            padding: "28px",
+            color: "#fff",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: "50%",
+              margin: "0 auto 12px",
+              border: "3px solid rgba(255,255,255,0.4)",
+              overflow: "hidden",
+            }}
+          >
+            {user.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  background: "rgba(255,255,255,0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 28,
+                  fontWeight: 900,
+                }}
+              >
+                {user.displayName?.[0]}
+              </div>
+            )}
+          </div>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>
+            {user.displayName}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+            {user.email}
+          </div>
+          {/* 인증 뱃지 */}
+          {profile?.isVerified ? (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                marginTop: 10,
+                background: "rgba(255,255,255,0.2)",
+                padding: "4px 12px",
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              ✅ WEST 인증 회원
+            </div>
+          ) : profile?.verifyStatus === "pending" ? (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                marginTop: 10,
+                background: "rgba(255,200,0,0.25)",
+                padding: "4px 12px",
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              ⏳ 인증 심사 중
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            padding: "24px 28px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          {!editing ? (
+            <>
+              {/* 프로필 보기 */}
+              {profile ? (
+                <>
+                  {profile.bio && (
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#475569",
+                        background: "#f8fafc",
+                        padding: "12px 16px",
+                        borderRadius: 12,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      "{profile.bio}"
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {pt && (
+                      <span
+                        style={{
+                          background: pt.color,
+                          color: "#fff",
+                          padding: "4px 12px",
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {profile.programType}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        background: "#1e3a6e",
+                        color: "#fff",
+                        padding: "4px 12px",
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {profile.cohort}기
+                    </span>
+                    <span
+                      style={{
+                        background: "#f0f4ff",
+                        color: "#3b5bdb",
+                        padding: "4px 12px",
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      📍 {profile.region}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => setEditing(true)}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: 12,
+                        border: "1.5px solid #e2e8f0",
+                        background: "#f8fafc",
+                        color: "#64748b",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      프로필 수정
+                    </button>
+                    {!profile.isVerified && (
+                      <button
+                        onClick={requestVerify}
+                        disabled={
+                          verifyLoading || profile.verifyStatus === "pending"
+                        }
+                        style={{
+                          flex: 2,
+                          padding: "10px",
+                          borderRadius: 12,
+                          border: "none",
+                          background:
+                            profile.verifyStatus === "pending"
+                              ? "#94a3b8"
+                              : "linear-gradient(135deg,#f59e0b,#d97706)",
+                          color: "#fff",
+                          fontWeight: 700,
+                          fontSize: 13,
+                          cursor:
+                            profile.verifyStatus === "pending"
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        {profile.verifyStatus === "pending"
+                          ? "⏳ 인증 심사 중"
+                          : "🎓 WEST 인증 신청"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "#94a3b8",
+                    fontSize: 14,
+                  }}
+                >
+                  프로필을 작성해주세요!
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* 프로필 편집 */}
+              <div>
+                <label style={labelStyle}>한줄 소개</label>
+                <input
+                  value={form.bio}
+                  onChange={(e) => set("bio", e.target.value)}
+                  placeholder="예: 중기 14기 LA 파견, 현재 취업 준비 중"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>프로그램 유형 *</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {Object.entries(PROGRAM_TYPES).map(([type, val]) => (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        set("programType", type);
+                        set("cohort", "");
+                        set("region", "");
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: "10px 6px",
+                        borderRadius: 12,
+                        border: "1.5px solid",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: form.programType === type ? 800 : 400,
+                        borderColor:
+                          form.programType === type ? val.color : "#e2e8f0",
+                        background:
+                          form.programType === type ? val.lightBg : "#fff",
+                        color:
+                          form.programType === type ? val.color : "#64748b",
+                        textAlign: "center",
+                      }}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <label style={labelStyle}>기수 *</label>
+                  <select
+                    value={form.cohort}
+                    onChange={(e) => {
+                      set("cohort", e.target.value);
+                      set("region", "");
+                    }}
+                    style={inputStyle}
+                  >
+                    <option value="">선택</option>
+                    {currentProgram.cohorts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>지역 *</label>
+                  <select
+                    value={form.region}
+                    onChange={(e) => set("region", e.target.value)}
+                    style={inputStyle}
+                    disabled={!cohort}
+                  >
+                    <option value="">선택</option>
+                    {(cohort?.regions || []).map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {profile && (
+                  <button
+                    onClick={() => setEditing(false)}
+                    style={{
+                      flex: 1,
+                      padding: 12,
+                      borderRadius: 12,
+                      border: "1.5px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: "pointer",
+                    }}
+                  >
+                    취소
+                  </button>
+                )}
+                <button
+                  onClick={save}
+                  disabled={loading}
+                  style={{
+                    flex: 2,
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "none",
+                    background: loading
+                      ? "#94a3b8"
+                      : "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    cursor: loading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {loading ? "저장 중..." : "저장하기 ✅"}
+                </button>
+              </div>
+            </>
+          )}
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px",
+              borderRadius: 12,
+              border: "1.5px solid #e2e8f0",
+              background: "#f8fafc",
+              color: "#94a3b8",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 관리자 인증 페이지 ────────────────────────────────────
+function AdminPage({ user }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "verifyRequests"),
+      orderBy("createdAt", "desc"),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const approve = async (req) => {
+    try {
+      await updateDoc(doc(db, "users", req.uid), {
+        isVerified: true,
+        verifyStatus: "verified",
+      });
+      await updateDoc(doc(db, "verifyRequests", req.id), {
+        status: "verified",
+      });
+      alert(`${req.displayName} 인증 승인 완료!`);
+    } catch (e) {
+      alert("오류: " + e.message);
+    }
+  };
+
+  const reject = async (req) => {
+    try {
+      await updateDoc(doc(db, "users", req.uid), { verifyStatus: null });
+      await updateDoc(doc(db, "verifyRequests", req.id), {
+        status: "rejected",
+      });
+      alert(`${req.displayName} 인증 거절됨`);
+    } catch (e) {
+      alert("오류: " + e.message);
+    }
+  };
+
+  if (user?.uid !== ADMIN_UID)
+    return (
+      <div
+        style={{
+          maxWidth: 600,
+          margin: "80px auto",
+          textAlign: "center",
+          color: "#94a3b8",
+        }}
+      >
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+        <div style={{ fontWeight: 700, fontSize: 18 }}>
+          관리자만 접근 가능해요
+        </div>
+      </div>
+    );
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 20px" }}>
+      <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
+        🔐 관리자 - 인증 승인
+      </div>
+      <div style={{ color: "#64748b", fontSize: 14, marginBottom: 24 }}>
+        WEST 참가 인증 신청 목록이에요
+      </div>
+      {loading ? (
+        <Spinner />
+      ) : requests.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "60px",
+            color: "#94a3b8",
+            background: "#fff",
+            borderRadius: 16,
+            border: "1.5px solid #e8ecf3",
+          }}
+        >
+          신청 내역이 없어요
+        </div>
+      ) : (
+        requests.map((req) => (
+          <div
+            key={req.id}
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: "20px 24px",
+              border: "1.5px solid #e8ecf3",
+              marginBottom: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 15,
+                  color: "#1a2340",
+                  marginBottom: 6,
+                }}
+              >
+                {req.displayName}
+              </div>
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                <span
+                  style={{
+                    background: "#1e3a6e",
+                    color: "#fff",
+                    padding: "2px 10px",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                >
+                  {req.programType}
+                </span>
+                <span
+                  style={{
+                    background: "#f0f4ff",
+                    color: "#3b5bdb",
+                    padding: "2px 10px",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                >
+                  {req.cohort}기
+                </span>
+                <span
+                  style={{
+                    background: "#f0fdf4",
+                    color: "#065f46",
+                    padding: "2px 10px",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                >
+                  📍{req.region}
+                </span>
+                <span
+                  style={{
+                    padding: "2px 10px",
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background:
+                      req.status === "pending"
+                        ? "#fef3c7"
+                        : req.status === "verified"
+                          ? "#d1fae5"
+                          : "#fee2e2",
+                    color:
+                      req.status === "pending"
+                        ? "#92400e"
+                        : req.status === "verified"
+                          ? "#065f46"
+                          : "#991b1b",
+                  }}
+                >
+                  {req.status === "pending"
+                    ? "⏳ 대기중"
+                    : req.status === "verified"
+                      ? "✅ 승인됨"
+                      : "❌ 거절됨"}
+                </span>
+              </div>
+            </div>
+            {req.status === "pending" && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => approve(req)}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(135deg,#065f46,#10b981)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  승인
+                </button>
+                <button
+                  onClick={() => reject(req)}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "#ef4444",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  거절
+                </button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 // ── 글쓰기 모달 ───────────────────────────────────────────
 function WriteModal({ user, onClose, editPost = null }) {
@@ -1372,6 +2080,7 @@ export default function WestApp() {
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [search, setSearch] = useState("");
   const [showWrite, setShowWrite] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
@@ -1546,11 +2255,12 @@ export default function WestApp() {
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {[
-              ["home", "🏠", "홈"],
-              ["community", "💬", "커뮤니티"],
-              ["info", "📋", "기수정보"],
-              ["tips", "💡", "꿀팁"],
-            ].map(([key, icon, label]) => (
+              ["home", "🏠 홈"],
+              ["community", "💬 커뮤니티"],
+              ["info", "📋 기수정보"],
+              ["tips", "💡 꿀팁"],
+              ...(user?.uid === ADMIN_UID ? [["admin", "🔐 관리자"]] : []),
+            ].map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
@@ -1584,7 +2294,28 @@ export default function WestApp() {
                   cursor: "pointer",
                 }}
               >
-                {isMobile ? "✏️" : "✏️ 글쓰기"}
+                ✏️ 글쓰기
+              </button>
+              <div
+                onClick={() => setShowProfile(true)}
+                style={{ cursor: "pointer" }}
+                title="프로필"
+              >
+                <Avatar user={user} size={34} />
+              </div>
+              <button
+                onClick={logout}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 10,
+                  border: "1.5px solid #e2e8f0",
+                  background: "#f8fafc",
+                  color: "#64748b",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                로그아웃
               </button>
               <Avatar user={user} size={isMobile ? 32 : 34} />
               {!isMobile && (
@@ -2005,6 +2736,9 @@ export default function WestApp() {
         </div>
       )}
 
+      {/* ADMIN */}
+      {tab === "admin" && <AdminPage user={user} />}
+
       {showWrite && (
         <WriteModal
           user={user}
@@ -2022,6 +2756,9 @@ export default function WestApp() {
           onClose={() => setSelectedPost(null)}
           onEdit={handleEdit}
         />
+      )}
+      {showProfile && user && (
+        <ProfileModal user={user} onClose={() => setShowProfile(false)} />
       )}
 
       <footer
