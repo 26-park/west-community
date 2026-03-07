@@ -2255,12 +2255,12 @@ export default function WestApp() {
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {[
-              ["home", "🏠 홈"],
-              ["community", "💬 커뮤니티"],
-              ["info", "📋 기수정보"],
-              ["tips", "💡 꿀팁"],
-              ...(user?.uid === ADMIN_UID ? [["admin", "🔐 관리자"]] : []),
-            ].map(([key, label]) => (
+              ["home", "🏠", "홈"],
+              ["community", "💬", "커뮤니티"],
+              ["info", "📋", "기수정보"],
+              ["tips", "💡", "꿀팁"],
+              ...(user?.uid === ADMIN_UID ? [["admin", "🔐", "관리자"]] : []),
+            ].map(([key, icon, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
@@ -2294,30 +2294,15 @@ export default function WestApp() {
                   cursor: "pointer",
                 }}
               >
-                ✏️ 글쓰기
+                {isMobile ? "✏️" : "✏️ 글쓰기"}
               </button>
               <div
                 onClick={() => setShowProfile(true)}
                 style={{ cursor: "pointer" }}
                 title="프로필"
               >
-                <Avatar user={user} size={34} />
+                <Avatar user={user} size={isMobile ? 32 : 34} />
               </div>
-              <button
-                onClick={logout}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 10,
-                  border: "1.5px solid #e2e8f0",
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                로그아웃
-              </button>
-              <Avatar user={user} size={isMobile ? 32 : 34} />
               {!isMobile && (
                 <button
                   onClick={logout}
