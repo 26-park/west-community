@@ -20,6 +20,8 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
+import westLogo from "./assets/logo.png";
+
 // ── Firebase 설정 ──────────────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyCMooXGqenYr9SlbUPvD8Kbg0tHoV_rts0", // 새로 발급한 키로 교체
@@ -1482,22 +1484,16 @@ export default function WestApp() {
             }}
             onClick={() => setTab("home")}
           >
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
-                borderRadius: 11,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontWeight: 900,
-                fontSize: 18,
-              }}
-            >
-              W
-            </div>
+            <img 
+              src={westLogo} 
+              alt="WEST 로고" 
+              style={{ 
+                width: 40,
+                height: 40, 
+                borderRadius: 8, 
+                objectFit: "contain" 
+              }} 
+            />
             <div>
               <div
                 style={{
