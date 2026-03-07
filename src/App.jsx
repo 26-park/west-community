@@ -22,6 +22,8 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
+import westLogo from "./assets/logo.png";
+
 // ── Firebase 설정 ──────────────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyCMooXGqenYr9SlbUPvD8Kbg0tHoV_rts0", // 새로 발급한 키로 교체
@@ -207,18 +209,282 @@ const labelStyle = {
   marginBottom: 6,
 };
 
+// ── 히어로 배너 캐러셀 ────────────────────────────────────
+const SLIDES = [
+  {
+    gradient: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
+    tag: "🇺🇸 WEST PROGRAM COMMUNITY",
+    title: "WEST 정보,\n이제 한 곳에서 찾으세요",
+    desc: "단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을\n선배들이 직접 공유하는 커뮤니티입니다",
+    btn1: { label: "커뮤니티 보기 →", type: "community" },
+    btn2: { label: "후기 작성하기", type: "write" },
+  },
+  {
+    gradient: "linear-gradient(135deg,#065f46,#059669,#10b981)",
+    tag: "📋 기수 정보",
+    title: "단기·중기·장기\n기수별 정보 한눈에",
+    desc: "1기부터 22기까지 기수별 파견 지역,\n어학원, 인턴 정보를 확인하세요",
+    btn1: { label: "기수정보 보기 →", type: "info" },
+    btn2: null,
+  },
+  {
+    gradient: "linear-gradient(135deg,#7c3aed,#6d28d9,#4f46e5)",
+    tag: "💡 꿀팁 모음",
+    title: "선배들이 알려주는\nWEST 꿀팁",
+    desc: "비자 준비부터 현지 생활까지\n실전 꿀팁을 모아봤어요",
+    btn1: { label: "꿀팁 보러가기 →", type: "tips" },
+    btn2: null,
+  },
+  {
+    gradient: "linear-gradient(135deg,#b45309,#d97706,#f59e0b)",
+    tag: "✅ WEST 인증",
+    title: "참가자 인증으로\n신뢰도를 높이세요",
+    desc: "합격 서류 인증을 받으면\n✅ WEST 인증 회원 뱃지가 부여돼요",
+    btn1: { label: "프로필에서 신청", type: "profile" },
+    btn2: null,
+  },
+];
+
+function HeroBanner({ user, onCommunity, onWrite }) {
+  const [current, setCurrent] = useState(0);
+  const total = SLIDES.length;
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrent((c) => (c + 1) % total), 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const prev = () => setCurrent((c) => (c - 1 + total) % total);
+  const next = () => setCurrent((c) => (c + 1) % total);
+  const slide = SLIDES[current];
+
+  const handleBtn = (type) => {
+    if (type === "community") onCommunity();
+    else if (type === "write") onWrite();
+    else if (type === "info")
+      document.querySelector?.('[data-tab="info"]')?.click();
+    else if (type === "tips")
+      document.querySelector?.('[data-tab="tips"]')?.click();
+  };
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        borderRadius: 24,
+        overflow: "hidden",
+        marginBottom: 32,
+      }}
+    >
+      {/* 슬라이드 */}
+      <div
+        style={{
+          background: slide.gradient,
+          padding: "48px 40px",
+          color: "#fff",
+          position: "relative",
+          overflow: "hidden",
+          transition: "background 0.5s ease",
+          minHeight: 200,
+        }}
+      >
+        {/* 배경 원 */}
+        <div
+          style={{
+            position: "absolute",
+            right: -40,
+            top: -40,
+            width: 220,
+            height: 220,
+            background: "rgba(255,255,255,0.04)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            right: 60,
+            bottom: -60,
+            width: 150,
+            height: 150,
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* 태그 */}
+        <div
+          style={{
+            fontSize: 12,
+            letterSpacing: "0.2em",
+            opacity: 0.7,
+            marginBottom: 12,
+            fontWeight: 600,
+          }}
+        >
+          {slide.tag}
+        </div>
+        {/* 제목 */}
+        <div
+          style={{
+            fontWeight: 900,
+            fontSize: "clamp(22px,4vw,34px)",
+            lineHeight: 1.25,
+            marginBottom: 14,
+            whiteSpace: "pre-line",
+          }}
+        >
+          {slide.title}
+        </div>
+        {/* 설명 */}
+        <div
+          style={{
+            fontSize: 15,
+            opacity: 0.85,
+            lineHeight: 1.75,
+            marginBottom: 28,
+            whiteSpace: "pre-line",
+          }}
+        >
+          {slide.desc}
+        </div>
+        {/* 버튼 */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={() => handleBtn(slide.btn1.type)}
+            style={{
+              padding: "11px 26px",
+              borderRadius: 12,
+              background: "#fff",
+              color: "#1e3a6e",
+              fontWeight: 800,
+              fontSize: 14,
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            {slide.btn1.label}
+          </button>
+          {slide.btn2 && (
+            <button
+              onClick={() => handleBtn(slide.btn2.type)}
+              style={{
+                padding: "11px 26px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.15)",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 14,
+                border: "1.5px solid rgba(255,255,255,0.3)",
+                cursor: "pointer",
+              }}
+            >
+              {user ? slide.btn2.label : "Google로 시작하기"}
+            </button>
+          )}
+        </div>
+
+        {/* 페이지 표시 + 화살표 */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 16,
+            right: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button
+            onClick={prev}
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              border: "none",
+              background: "rgba(255,255,255,0.2)",
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ‹
+          </button>
+          <span style={{ fontSize: 13, fontWeight: 700, opacity: 0.9 }}>
+            {current + 1} / {total}
+          </span>
+          <button
+            onClick={next}
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              border: "none",
+              background: "rgba(255,255,255,0.2)",
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      {/* 하단 도트 */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 6,
+          padding: "10px 0",
+          background: "rgba(0,0,0,0.03)",
+        }}
+      >
+        {SLIDES.map((_, i) => (
+          <div
+            key={i}
+            onClick={() => setCurrent(i)}
+            style={{
+              width: i === current ? 20 : 6,
+              height: 6,
+              borderRadius: 3,
+              background: i === current ? "#1e3a6e" : "#cbd5e1",
+              cursor: "pointer",
+              transition: "all 0.3s",
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── 관리자 UID (본인 uid로 교체) ──────────────────────────
 const ADMIN_UID = "6CgsiLklPVWTa2eyL911DgAmG6g1"; // Firebase Auth에서 본인 uid 복사해서 넣기
 
 // ── 프로필 모달 ───────────────────────────────────────────
-function ProfileModal({ user, onClose }) {
+// targetUid: 볼 대상 uid / currentUser: 로그인한 사람
+function ProfileModal({ currentUser, targetUid, onClose }) {
+  const isMyProfile = currentUser?.uid === targetUid;
   const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
+    nickname: "",
     bio: "",
     programType: "중기",
     cohort: "",
     region: "",
+    langSchool: "",
+    internCompany: "",
   });
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -230,22 +496,25 @@ function ProfileModal({ user, onClose }) {
 
   useEffect(() => {
     const load = async () => {
-      const snap = await getDoc(doc(db, "users", user.uid));
+      const snap = await getDoc(doc(db, "users", targetUid));
       if (snap.exists()) {
         const data = snap.data();
         setProfile(data);
         setForm({
+          nickname: data.nickname || data.displayName || "",
           bio: data.bio || "",
           programType: data.programType || "중기",
           cohort: data.cohort?.toString() || "",
           region: data.region || "",
+          langSchool: data.langSchool || "",
+          internCompany: data.internCompany || "",
         });
-      } else {
+      } else if (isMyProfile) {
         setEditing(true);
       }
     };
     load();
-  }, [user.uid]);
+  }, [targetUid]);
 
   const save = async () => {
     if (!form.programType || !form.cohort || !form.region) {
@@ -254,20 +523,23 @@ function ProfileModal({ user, onClose }) {
     }
     setLoading(true);
     try {
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
+      await setDoc(doc(db, "users", targetUid), {
+        uid: targetUid,
+        displayName: currentUser.displayName,
+        nickname: form.nickname || currentUser.displayName,
+        photoURL: currentUser.photoURL,
         bio: form.bio,
         programType: form.programType,
         cohort: Number(form.cohort),
         region: form.region,
+        langSchool: form.langSchool,
+        internCompany: form.internCompany,
         isVerified: profile?.isVerified || false,
         verifyStatus: profile?.verifyStatus || null,
         updatedAt: serverTimestamp(),
         createdAt: profile?.createdAt || serverTimestamp(),
       });
-      const snap = await getDoc(doc(db, "users", user.uid));
+      const snap = await getDoc(doc(db, "users", targetUid));
       setProfile(snap.data());
       setEditing(false);
     } catch (e) {
@@ -291,10 +563,10 @@ function ProfileModal({ user, onClose }) {
     }
     setVerifyLoading(true);
     try {
-      await updateDoc(doc(db, "users", user.uid), { verifyStatus: "pending" });
+      await updateDoc(doc(db, "users", targetUid), { verifyStatus: "pending" });
       await addDoc(collection(db, "verifyRequests"), {
-        uid: user.uid,
-        displayName: user.displayName,
+        uid: targetUid,
+        displayName: profile.nickname || profile.displayName,
         programType: profile.programType,
         cohort: profile.cohort,
         region: profile.region,
@@ -310,6 +582,48 @@ function ProfileModal({ user, onClose }) {
   };
 
   const pt = profile?.programType ? PROGRAM_TYPES[profile.programType] : null;
+  const displayName = profile?.nickname || profile?.displayName || "알 수 없음";
+  const photoURL = profile?.photoURL || currentUser?.photoURL;
+
+  // 프로필 항목 행 컴포넌트
+  const InfoRow = ({ icon, label, value }) =>
+    value ? (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          padding: "12px 0",
+          borderBottom: "1px solid #f1f5f9",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 18,
+            width: 24,
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#94a3b8",
+              fontWeight: 600,
+              marginBottom: 2,
+            }}
+          >
+            {label}
+          </div>
+          <div style={{ fontSize: 14, color: "#1a2340", fontWeight: 500 }}>
+            {value}
+          </div>
+        </div>
+      </div>
+    ) : null;
 
   return (
     <div
@@ -356,9 +670,9 @@ function ProfileModal({ user, onClose }) {
               overflow: "hidden",
             }}
           >
-            {user.photoURL ? (
+            {photoURL ? (
               <img
-                src={user.photoURL}
+                src={photoURL}
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
@@ -375,50 +689,63 @@ function ProfileModal({ user, onClose }) {
                   fontWeight: 900,
                 }}
               >
-                {user.displayName?.[0]}
+                {displayName[0]}
               </div>
             )}
           </div>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>
-            {user.displayName}
-          </div>
-          <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-            {user.email}
-          </div>
-          {/* 인증 뱃지 */}
-          {profile?.isVerified ? (
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                marginTop: 10,
-                background: "rgba(255,255,255,0.2)",
-                padding: "4px 12px",
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              ✅ WEST 인증 회원
+          <div style={{ fontWeight: 900, fontSize: 20 }}>{displayName}</div>
+          {isMyProfile && (
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 3 }}>
+              {currentUser.email}
             </div>
-          ) : profile?.verifyStatus === "pending" ? (
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                marginTop: 10,
-                background: "rgba(255,200,0,0.25)",
-                padding: "4px 12px",
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              ⏳ 인증 심사 중
-            </div>
-          ) : null}
+          )}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 8,
+              marginTop: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {profile?.isVerified ? (
+              <span
+                style={{
+                  background: "rgba(16,185,129,0.3)",
+                  padding: "4px 12px",
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                ✅ WEST 인증 회원
+              </span>
+            ) : profile?.verifyStatus === "pending" ? (
+              <span
+                style={{
+                  background: "rgba(245,158,11,0.3)",
+                  padding: "4px 12px",
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                ⏳ 인증 심사 중
+              </span>
+            ) : null}
+            {isMyProfile && (
+              <span
+                style={{
+                  background: "rgba(255,255,255,0.15)",
+                  padding: "4px 12px",
+                  borderRadius: 20,
+                  fontSize: 12,
+                }}
+              >
+                나의 프로필
+              </span>
+            )}
+          </div>
         </div>
 
         <div
@@ -426,131 +753,140 @@ function ProfileModal({ user, onClose }) {
             padding: "24px 28px",
             display: "flex",
             flexDirection: "column",
-            gap: 16,
+            gap: 0,
           }}
         >
           {!editing ? (
             <>
-              {/* 프로필 보기 */}
+              {/* 한줄 소개 */}
+              {profile?.bio && (
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    borderRadius: 12,
+                    padding: "14px 16px",
+                    marginBottom: 16,
+                    fontSize: 14,
+                    color: "#475569",
+                    lineHeight: 1.6,
+                    fontStyle: "italic",
+                  }}
+                >
+                  "{profile.bio}"
+                </div>
+              )}
+
+              {/* 정보 항목들 */}
               {profile ? (
-                <>
-                  {profile.bio && (
-                    <div
-                      style={{
-                        fontSize: 14,
-                        color: "#475569",
-                        background: "#f8fafc",
-                        padding: "12px 16px",
-                        borderRadius: 12,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      "{profile.bio}"
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {pt && (
-                      <span
-                        style={{
-                          background: pt.color,
-                          color: "#fff",
-                          padding: "4px 12px",
-                          borderRadius: 20,
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {profile.programType}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        background: "#1e3a6e",
-                        color: "#fff",
-                        padding: "4px 12px",
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {profile.cohort}기
-                    </span>
-                    <span
-                      style={{
-                        background: "#f0f4ff",
-                        color: "#3b5bdb",
-                        padding: "4px 12px",
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      📍 {profile.region}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => setEditing(true)}
-                      style={{
-                        flex: 1,
-                        padding: "10px",
-                        borderRadius: 12,
-                        border: "1.5px solid #e2e8f0",
-                        background: "#f8fafc",
-                        color: "#64748b",
-                        fontWeight: 600,
-                        fontSize: 13,
-                        cursor: "pointer",
-                      }}
-                    >
-                      프로필 수정
-                    </button>
-                    {!profile.isVerified && (
-                      <button
-                        onClick={requestVerify}
-                        disabled={
-                          verifyLoading || profile.verifyStatus === "pending"
-                        }
-                        style={{
-                          flex: 2,
-                          padding: "10px",
-                          borderRadius: 12,
-                          border: "none",
-                          background:
-                            profile.verifyStatus === "pending"
-                              ? "#94a3b8"
-                              : "linear-gradient(135deg,#f59e0b,#d97706)",
-                          color: "#fff",
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor:
-                            profile.verifyStatus === "pending"
-                              ? "not-allowed"
-                              : "pointer",
-                        }}
-                      >
-                        {profile.verifyStatus === "pending"
-                          ? "⏳ 인증 심사 중"
-                          : "🎓 WEST 인증 신청"}
-                      </button>
-                    )}
-                  </div>
-                </>
+                <div style={{ marginBottom: 16 }}>
+                  <InfoRow
+                    icon="🎓"
+                    label="프로그램"
+                    value={
+                      profile.programType
+                        ? `${profile.programType} (${profile.programType === "단기" ? "최장 6개월" : profile.programType === "중기" ? "최장 12개월" : "최장 18개월"})`
+                        : null
+                    }
+                  />
+                  <InfoRow
+                    icon="🔢"
+                    label="기수"
+                    value={profile.cohort ? `${profile.cohort}기` : null}
+                  />
+                  <InfoRow icon="📍" label="파견 지역" value={profile.region} />
+                  <InfoRow
+                    icon="🏫"
+                    label="어학원"
+                    value={profile.langSchool}
+                  />
+                  <InfoRow
+                    icon="🏢"
+                    label="인턴 기업"
+                    value={profile.internCompany}
+                  />
+                </div>
               ) : (
                 <div
                   style={{
                     textAlign: "center",
+                    padding: "30px 0",
                     color: "#94a3b8",
                     fontSize: 14,
                   }}
                 >
-                  프로필을 작성해주세요!
+                  {isMyProfile
+                    ? "프로필을 작성해주세요!"
+                    : "아직 프로필이 없어요"}
+                </div>
+              )}
+
+              {/* 본인만 수정/인증 신청 버튼 */}
+              {isMyProfile && (
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={() => setEditing(true)}
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      borderRadius: 12,
+                      border: "1.5px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      fontWeight: 600,
+                      fontSize: 13,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✏️ 프로필 수정
+                  </button>
+                  {!profile?.isVerified && (
+                    <button
+                      onClick={requestVerify}
+                      disabled={
+                        verifyLoading || profile?.verifyStatus === "pending"
+                      }
+                      style={{
+                        flex: 2,
+                        padding: "10px",
+                        borderRadius: 12,
+                        border: "none",
+                        background:
+                          profile?.verifyStatus === "pending"
+                            ? "#94a3b8"
+                            : "linear-gradient(135deg,#f59e0b,#d97706)",
+                        color: "#fff",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor:
+                          profile?.verifyStatus === "pending"
+                            ? "not-allowed"
+                            : "pointer",
+                      }}
+                    >
+                      {profile?.verifyStatus === "pending"
+                        ? "⏳ 인증 심사 중"
+                        : "🎓 WEST 인증 신청"}
+                    </button>
+                  )}
                 </div>
               )}
             </>
           ) : (
-            <>
-              {/* 프로필 편집 */}
+            /* ── 편집 모드 (본인만) ── */
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>닉네임</label>
+                <input
+                  value={form.nickname}
+                  onChange={(e) => set("nickname", e.target.value)}
+                  placeholder="표시될 이름"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
               <div>
                 <label style={labelStyle}>한줄 소개</label>
                 <input
@@ -623,7 +959,7 @@ function ProfileModal({ user, onClose }) {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>지역 *</label>
+                  <label style={labelStyle}>파견 지역 *</label>
                   <select
                     value={form.region}
                     onChange={(e) => set("region", e.target.value)}
@@ -639,7 +975,33 @@ function ProfileModal({ user, onClose }) {
                   </select>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div>
+                <label style={labelStyle}>어학원</label>
+                <input
+                  value={form.langSchool}
+                  onChange={(e) => set("langSchool", e.target.value)}
+                  placeholder="예: EC New York, Kaplan LA"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>인턴 기업</label>
+                <input
+                  value={form.internCompany}
+                  onChange={(e) => set("internCompany", e.target.value)}
+                  placeholder="예: Google, 한국 무역관"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                 {profile && (
                   <button
                     onClick={() => setEditing(false)}
@@ -678,11 +1040,13 @@ function ProfileModal({ user, onClose }) {
                   {loading ? "저장 중..." : "저장하기 ✅"}
                 </button>
               </div>
-            </>
+            </div>
           )}
+
           <button
             onClick={onClose}
             style={{
+              marginTop: 16,
               padding: "10px",
               borderRadius: 12,
               border: "1.5px solid #e2e8f0",
@@ -690,6 +1054,7 @@ function ProfileModal({ user, onClose }) {
               color: "#94a3b8",
               fontSize: 13,
               cursor: "pointer",
+              width: "100%",
             }}
           >
             닫기
@@ -1260,7 +1625,7 @@ function WriteModal({ user, onClose, editPost = null }) {
 }
 
 // ── 게시글 카드 ───────────────────────────────────────────
-function PostCard({ post, user, onClick, onEdit }) {
+function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
   const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
   const [liked, setLiked] = useState(false);
@@ -1384,14 +1749,32 @@ function PostCard({ post, user, onClick, onEdit }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar
-            user={{
-              photoURL: post.isAnonymous ? null : post.authorPhoto,
-              displayName: post.authorName,
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!post.isAnonymous) onProfileClick?.(post.authorId);
             }}
-            size={24}
-          />
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>
+            style={{ cursor: post.isAnonymous ? "default" : "pointer" }}
+          >
+            <Avatar
+              user={{
+                photoURL: post.isAnonymous ? null : post.authorPhoto,
+                displayName: post.authorName,
+              }}
+              size={24}
+            />
+          </div>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!post.isAnonymous) onProfileClick?.(post.authorId);
+            }}
+            style={{
+              fontSize: 12,
+              color: "#94a3b8",
+              cursor: post.isAnonymous ? "default" : "pointer",
+            }}
+          >
             {post.authorName} · {timeAgo(post.createdAt)}
             {post.updatedAt && (
               <span style={{ color: "#cbd5e1" }}> (수정됨)</span>
@@ -2078,14 +2461,25 @@ export default function WestApp() {
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [search, setSearch] = useState("");
   const [showWrite, setShowWrite] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const [showProfile, setShowProfile] = useState(null); // uid 저장
   const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
 
   const handleEdit = (post) => {
     setEditPost(post);
     setShowWrite(true);
   };
+
+  // 반응형 화면 크기 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -2159,6 +2553,22 @@ export default function WestApp() {
         color: "#1a2340",
       }}
     >
+      {/* 반응형 스타일 */}
+      <style>{`
+        @media (max-width: 640px) {
+          .nav-subtitle {
+            display: none !important;
+          }
+        }
+        
+        /* 모바일에서 버튼 텍스트 크기 조정 */
+        @media (max-width: 480px) {
+          button {
+            font-size: 12px !important;
+          }
+        }
+      `}</style>
+
       {/* NAV */}
       <nav
         style={{
@@ -2191,51 +2601,52 @@ export default function WestApp() {
             }}
             onClick={() => setTab("home")}
           >
-            <div
+            <img
+              src={westLogo}
+              alt="WEST 로고"
               style={{
-                width: 38,
-                height: 38,
-                background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
-                borderRadius: 11,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontWeight: 900,
-                fontSize: 18,
+                width: isMobile ? 32 : 40,
+                height: isMobile ? 32 : 40,
+                borderRadius: 8,
+                objectFit: "contain",
               }}
-            >
-              W
-            </div>
+            />
             <div>
               <div
                 style={{
                   fontWeight: 900,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   color: "#1e3a6e",
                   lineHeight: 1.1,
                 }}
               >
                 WEST 커뮤니티
               </div>
-              <div style={{ fontSize: 10, color: "#94a3b8" }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "#94a3b8",
+                  display: isMobile ? "none" : "block",
+                }}
+                className="nav-subtitle"
+              >
                 Work & English Study in the US
               </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {[
-              ["home", "🏠 홈"],
-              ["community", "💬 커뮤니티"],
-              ["info", "📋 기수정보"],
-              ["tips", "💡 꿀팁"],
-              ...(user?.uid === ADMIN_UID ? [["admin", "🔐 관리자"]] : []),
-            ].map(([key, label]) => (
+              ["home", "🏠", "홈"],
+              ["community", "💬", "커뮤니티"],
+              ["info", "📋", "기수정보"],
+              ["tips", "💡", "꿀팁"],
+              ...(user?.uid === ADMIN_UID ? [["admin", "🔐", "관리자"]] : []),
+            ].map(([key, icon, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
                 style={{
-                  padding: "7px 13px",
+                  padding: isMobile ? "7px 10px" : "7px 13px",
                   borderRadius: 10,
                   border: "none",
                   cursor: "pointer",
@@ -2245,7 +2656,7 @@ export default function WestApp() {
                   color: tab === key ? "#1e3a6e" : "#64748b",
                 }}
               >
-                {label}
+                {isMobile ? icon : `${icon} ${label}`}
               </button>
             ))}
           </div>
@@ -2254,7 +2665,7 @@ export default function WestApp() {
               <button
                 onClick={() => setShowWrite(true)}
                 style={{
-                  padding: "8px 16px",
+                  padding: isMobile ? "8px 12px" : "8px 16px",
                   borderRadius: 10,
                   background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
                   color: "#fff",
@@ -2264,29 +2675,31 @@ export default function WestApp() {
                   cursor: "pointer",
                 }}
               >
-                ✏️ 글쓰기
+                {isMobile ? "✏️" : "✏️ 글쓰기"}
               </button>
               <div
-                onClick={() => setShowProfile(true)}
+                onClick={() => setShowProfile(user.uid)}
                 style={{ cursor: "pointer" }}
                 title="프로필"
               >
-                <Avatar user={user} size={34} />
+                <Avatar user={user} size={isMobile ? 32 : 34} />
               </div>
-              <button
-                onClick={logout}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 10,
-                  border: "1.5px solid #e2e8f0",
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                로그아웃
-              </button>
+              {!isMobile && (
+                <button
+                  onClick={logout}
+                  style={{
+                    padding: "7px 12px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  로그아웃
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -2295,12 +2708,12 @@ export default function WestApp() {
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "8px 18px",
+                padding: isMobile ? "8px 12px" : "8px 18px",
                 borderRadius: 10,
                 border: "1.5px solid #e2e8f0",
                 background: "#fff",
                 fontWeight: 700,
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 cursor: "pointer",
               }}
             >
@@ -2310,7 +2723,7 @@ export default function WestApp() {
                 height={16}
                 alt=""
               />
-              Google 로그인
+              {isMobile ? "로그인" : "Google 로그인"}
             </button>
           )}
         </div>
@@ -2322,8 +2735,8 @@ export default function WestApp() {
           <div
             style={{
               background: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
-              borderRadius: 24,
-              padding: "48px 40px",
+              borderRadius: isMobile ? 16 : 24,
+              padding: isMobile ? "32px 20px" : "48px 40px",
               color: "#fff",
               marginBottom: 32,
               position: "relative",
@@ -2343,7 +2756,7 @@ export default function WestApp() {
             />
             <div
               style={{
-                fontSize: 12,
+                fontSize: isMobile ? 10 : 12,
                 letterSpacing: "0.2em",
                 opacity: 0.7,
                 marginBottom: 12,
@@ -2366,15 +2779,21 @@ export default function WestApp() {
             </div>
             <div
               style={{
-                fontSize: 15,
+                fontSize: isMobile ? 13 : 15,
                 opacity: 0.85,
                 lineHeight: 1.75,
                 marginBottom: 28,
               }}
             >
-              단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
-              <br />
-              선배들이 직접 공유하는 커뮤니티입니다
+              {isMobile ? (
+                "단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을 선배들이 직접 공유하는 커뮤니티입니다"
+              ) : (
+                <>
+                  단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
+                  <br />
+                  선배들이 직접 공유하는 커뮤니티입니다
+                </>
+              )}
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button
@@ -2413,7 +2832,7 @@ export default function WestApp() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3,1fr)",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
               gap: 14,
               marginBottom: 32,
             }}
@@ -2472,6 +2891,7 @@ export default function WestApp() {
                 user={user}
                 onClick={setSelectedPost}
                 onEdit={handleEdit}
+                onProfileClick={setShowProfile}
               />
             ))
           )}
@@ -2484,20 +2904,22 @@ export default function WestApp() {
           style={{
             maxWidth: 1200,
             margin: "0 auto",
-            padding: "32px 20px",
+            padding: isMobile ? "20px 16px" : "32px 20px",
             display: "flex",
             gap: 22,
             alignItems: "flex-start",
           }}
         >
-          <Sidebar
-            selectedProgramType={selectedProgramType}
-            setSelectedProgramType={setSelectedProgramType}
-            selectedCohort={selectedCohort}
-            setSelectedCohort={setSelectedCohort}
-            selectedRegion={selectedRegion}
-            setSelectedRegion={setSelectedRegion}
-          />
+          {!isMobile && (
+            <Sidebar
+              selectedProgramType={selectedProgramType}
+              setSelectedProgramType={setSelectedProgramType}
+              selectedCohort={selectedCohort}
+              setSelectedCohort={setSelectedCohort}
+              selectedRegion={selectedRegion}
+              setSelectedRegion={setSelectedRegion}
+            />
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -2584,6 +3006,7 @@ export default function WestApp() {
                   user={user}
                   onClick={setSelectedPost}
                   onEdit={handleEdit}
+                  onProfileClick={setShowProfile}
                 />
               ))
             )}
@@ -2604,7 +3027,7 @@ export default function WestApp() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
               gap: 20,
             }}
           >
@@ -2642,6 +3065,7 @@ export default function WestApp() {
                   user={user}
                   onClick={setSelectedPost}
                   onEdit={handleEdit}
+                  onProfileClick={setShowProfile}
                 />
               ))
           )}
@@ -2700,10 +3124,15 @@ export default function WestApp() {
           user={user}
           onClose={() => setSelectedPost(null)}
           onEdit={handleEdit}
+          onProfileClick={setShowProfile}
         />
       )}
-      {showProfile && user && (
-        <ProfileModal user={user} onClose={() => setShowProfile(false)} />
+      {showProfile && (
+        <ProfileModal
+          currentUser={user}
+          targetUid={showProfile}
+          onClose={() => setShowProfile(null)}
+        />
       )}
 
       <footer
