@@ -1374,11 +1374,22 @@ export default function WestApp() {
   const [showWrite, setShowWrite] = useState(false);
   const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
 
   const handleEdit = (post) => {
     setEditPost(post);
     setShowWrite(true);
   };
+
+  // 반응형 화면 크기 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -1452,6 +1463,22 @@ export default function WestApp() {
         color: "#1a2340",
       }}
     >
+      {/* 반응형 스타일 */}
+      <style>{`
+        @media (max-width: 640px) {
+          .nav-subtitle {
+            display: none !important;
+          }
+        }
+        
+        /* 모바일에서 버튼 텍스트 크기 조정 */
+        @media (max-width: 480px) {
+          button {
+            font-size: 12px !important;
+          }
+        }
+      `}</style>
+      
       {/* NAV */}
       <nav
         style={{
@@ -1488,8 +1515,8 @@ export default function WestApp() {
               src={westLogo} 
               alt="WEST 로고" 
               style={{ 
-                width: 40,
-                height: 40, 
+                width: isMobile ? 32 : 40,
+                height: isMobile ? 32 : 40, 
                 borderRadius: 8, 
                 objectFit: "contain" 
               }} 
@@ -1498,30 +1525,37 @@ export default function WestApp() {
               <div
                 style={{
                   fontWeight: 900,
-                  fontSize: 16,
+                  fontSize: isMobile ? 14 : 16,
                   color: "#1e3a6e",
                   lineHeight: 1.1,
                 }}
               >
                 WEST 커뮤니티
               </div>
-              <div style={{ fontSize: 10, color: "#94a3b8" }}>
+              <div 
+                style={{ 
+                  fontSize: 10, 
+                  color: "#94a3b8",
+                  display: isMobile ? "none" : "block"
+                }}
+                className="nav-subtitle"
+              >
                 Work & English Study in the US
               </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {[
-              ["home", "🏠 홈"],
-              ["community", "💬 커뮤니티"],
-              ["info", "📋 기수정보"],
-              ["tips", "💡 꿀팁"],
-            ].map(([key, label]) => (
+              ["home", "🏠", "홈"],
+              ["community", "💬", "커뮤니티"],
+              ["info", "📋", "기수정보"],
+              ["tips", "💡", "꿀팁"],
+            ].map(([key, icon, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
                 style={{
-                  padding: "7px 13px",
+                  padding: isMobile ? "7px 10px" : "7px 13px",
                   borderRadius: 10,
                   border: "none",
                   cursor: "pointer",
@@ -1531,7 +1565,7 @@ export default function WestApp() {
                   color: tab === key ? "#1e3a6e" : "#64748b",
                 }}
               >
-                {label}
+                {isMobile ? icon : `${icon} ${label}`}
               </button>
             ))}
           </div>
@@ -1540,7 +1574,7 @@ export default function WestApp() {
               <button
                 onClick={() => setShowWrite(true)}
                 style={{
-                  padding: "8px 16px",
+                  padding: isMobile ? "8px 12px" : "8px 16px",
                   borderRadius: 10,
                   background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
                   color: "#fff",
@@ -1550,23 +1584,25 @@ export default function WestApp() {
                   cursor: "pointer",
                 }}
               >
-                ✏️ 글쓰기
+                {isMobile ? "✏️" : "✏️ 글쓰기"}
               </button>
-              <Avatar user={user} size={34} />
-              <button
-                onClick={logout}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 10,
-                  border: "1.5px solid #e2e8f0",
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                로그아웃
-              </button>
+              <Avatar user={user} size={isMobile ? 32 : 34} />
+              {!isMobile && (
+                <button
+                  onClick={logout}
+                  style={{
+                    padding: "7px 12px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  로그아웃
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -1575,12 +1611,12 @@ export default function WestApp() {
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "8px 18px",
+                padding: isMobile ? "8px 12px" : "8px 18px",
                 borderRadius: 10,
                 border: "1.5px solid #e2e8f0",
                 background: "#fff",
                 fontWeight: 700,
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 cursor: "pointer",
               }}
             >
@@ -1590,7 +1626,7 @@ export default function WestApp() {
                 height={16}
                 alt=""
               />
-              Google 로그인
+              {isMobile ? "로그인" : "Google 로그인"}
             </button>
           )}
         </div>
@@ -1602,8 +1638,8 @@ export default function WestApp() {
           <div
             style={{
               background: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
-              borderRadius: 24,
-              padding: "48px 40px",
+              borderRadius: isMobile ? 16 : 24,
+              padding: isMobile ? "32px 20px" : "48px 40px",
               color: "#fff",
               marginBottom: 32,
               position: "relative",
@@ -1623,7 +1659,7 @@ export default function WestApp() {
             />
             <div
               style={{
-                fontSize: 12,
+                fontSize: isMobile ? 10 : 12,
                 letterSpacing: "0.2em",
                 opacity: 0.7,
                 marginBottom: 12,
@@ -1646,15 +1682,21 @@ export default function WestApp() {
             </div>
             <div
               style={{
-                fontSize: 15,
+                fontSize: isMobile ? 13 : 15,
                 opacity: 0.85,
                 lineHeight: 1.75,
                 marginBottom: 28,
               }}
             >
-              단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
-              <br />
-              선배들이 직접 공유하는 커뮤니티입니다
+              {isMobile ? (
+                "단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을 선배들이 직접 공유하는 커뮤니티입니다"
+              ) : (
+                <>
+                  단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
+                  <br />
+                  선배들이 직접 공유하는 커뮤니티입니다
+                </>
+              )}
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button
@@ -1693,7 +1735,7 @@ export default function WestApp() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3,1fr)",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
               gap: 14,
               marginBottom: 32,
             }}
@@ -1764,20 +1806,22 @@ export default function WestApp() {
           style={{
             maxWidth: 1200,
             margin: "0 auto",
-            padding: "32px 20px",
+            padding: isMobile ? "20px 16px" : "32px 20px",
             display: "flex",
             gap: 22,
             alignItems: "flex-start",
           }}
         >
-          <Sidebar
-            selectedProgramType={selectedProgramType}
-            setSelectedProgramType={setSelectedProgramType}
-            selectedCohort={selectedCohort}
-            setSelectedCohort={setSelectedCohort}
-            selectedRegion={selectedRegion}
-            setSelectedRegion={setSelectedRegion}
-          />
+          {!isMobile && (
+            <Sidebar
+              selectedProgramType={selectedProgramType}
+              setSelectedProgramType={setSelectedProgramType}
+              selectedCohort={selectedCohort}
+              setSelectedCohort={setSelectedCohort}
+              selectedRegion={selectedRegion}
+              setSelectedRegion={setSelectedRegion}
+            />
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -1884,7 +1928,7 @@ export default function WestApp() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
               gap: 20,
             }}
           >
