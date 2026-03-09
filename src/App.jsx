@@ -3,6 +3,8 @@ import { initializeApp } from "firebase/app";
 import {
   getAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -3022,7 +3024,21 @@ export default function WestApp() {
     return unsub;
   }, []);
 
-  const login = () => signInWithPopup(auth, provider);
+  // 리다이렉트 로그인 결과 처리 (모바일)
+  useEffect(() => {
+    getRedirectResult(auth).catch(() => {});
+  }, []);
+
+  const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(
+    navigator.userAgent,
+  );
+  const login = () => {
+    if (isMobileDevice) {
+      signInWithRedirect(auth, provider);
+    } else {
+      signInWithPopup(auth, provider).catch(() => {});
+    }
+  };
   const logout = () => signOut(auth);
 
   const filtered = posts.filter((p) => {
