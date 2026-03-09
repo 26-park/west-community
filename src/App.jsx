@@ -13,13 +13,16 @@ import {
   addDoc,
   query,
   orderBy,
+  where,
   serverTimestamp,
   doc,
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   increment,
   onSnapshot,
+  getDocs,
 } from "firebase/firestore";
 
 import westLogo from "./assets/logo.png";
@@ -473,7 +476,7 @@ const ADMIN_UID = "6CgsiLklPVWTa2eyL911DgAmG6g1"; // Firebase Auth에서 본인 
 
 // ── 프로필 모달 ───────────────────────────────────────────
 // targetUid: 볼 대상 uid / currentUser: 로그인한 사람
-function ProfileModal({ currentUser, targetUid, onClose }) {
+function ProfileModal({ currentUser, targetUid, onClose, onStartChat }) {
   const isMyProfile = currentUser?.uid === targetUid;
   const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -870,6 +873,41 @@ function ProfileModal({ currentUser, targetUid, onClose }) {
                   )}
                 </div>
               )}
+              {/* 상대 프로필 - 메세지 보내기 */}
+              {!isMyProfile && currentUser && (
+                <button
+                  onClick={async () => {
+                    const roomId = await getOrCreateRoom(
+                      currentUser.uid,
+                      targetUid,
+                    );
+                    onClose();
+                    if (onStartChat)
+                      onStartChat(
+                        roomId,
+                        targetUid,
+                        profile?.nickname ||
+                          profile?.displayName ||
+                          "알 수 없음",
+                        profile?.photoURL,
+                      );
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: 8,
+                    padding: "11px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  💌 메세지 보내기
+                </button>
+              )}
             </>
           ) : (
             /* ── 편집 모드 (본인만) ── */
@@ -1063,6 +1101,521 @@ function ProfileModal({ currentUser, targetUid, onClose }) {
       </div>
     </div>
   );
+}
+
+// ── 공통 게시판 컴포넌트 ─────────────────────────────────
+function BoardPage({
+  title,
+  desc,
+  boardType,
+  user,
+  posts,
+  postsLoading,
+  setSelectedPost,
+  handleEdit,
+  setShowProfile,
+  onWrite,
+  isMobile,
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = posts
+    .filter((p) => p.boardType === boardType)
+    .filter((p) => {
+      if (!search) return true;
+      return (
+        p.title?.includes(search) ||
+        p.content?.includes(search) ||
+        p.authorName?.includes(search) ||
+        (p.tags || []).some((t) => t.includes(search))
+      );
+    });
+
+  return (
+    <div>
+      <div style={{ fontWeight: 900, fontSize: 20, marginBottom: 4 }}>
+        {title}
+      </div>
+      <div style={{ color: "#64748b", fontSize: 14, marginBottom: 16 }}>
+        {desc}
+      </div>
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 16,
+          padding: "12px 16px",
+          border: "1.5px solid #e8ecf3",
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 제목, 내용, 작성자, 태그 검색..."
+          style={{
+            flex: 1,
+            padding: "9px 14px",
+            borderRadius: 10,
+            border: "1.5px solid #e2e8f0",
+            fontSize: 14,
+            boxSizing: "border-box",
+          }}
+        />
+        <span style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>
+          {filtered.length}개
+        </span>
+      </div>
+      {postsLoading ? (
+        <Spinner />
+      ) : filtered.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "60px 20px",
+            color: "#94a3b8",
+            background: "#fff",
+            borderRadius: 16,
+            border: "1.5px solid #e8ecf3",
+          }}
+        >
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+          <div style={{ fontWeight: 600 }}>게시글이 없어요</div>
+          <div style={{ fontSize: 13, marginTop: 6 }}>
+            첫 번째 글을 작성해보세요!
+          </div>
+        </div>
+      ) : (
+        filtered.map((p) => (
+          <PostCard
+            key={p.id}
+            post={p}
+            user={user}
+            onClick={setSelectedPost}
+            onEdit={handleEdit}
+            onProfileClick={setShowProfile}
+          />
+        ))
+      )}
+      <button
+        onClick={onWrite}
+        style={{
+          marginTop: 20,
+          width: "100%",
+          padding: "14px",
+          borderRadius: 14,
+          border: "none",
+          background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+          color: "#fff",
+          fontWeight: 800,
+          fontSize: 15,
+          cursor: "pointer",
+        }}
+      >
+        {user ? "✏️ 글쓰기" : "로그인 후 글쓰기"}
+      </button>
+    </div>
+  );
+}
+
+// ── 메세지 페이지 ─────────────────────────────────────────
+function MessagesPage({ user, initialRoom, onRoomOpened }) {
+  const [rooms, setRooms] = useState([]);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // initialRoom이 들어오면 자동 선택
+  useEffect(() => {
+    if (initialRoom) {
+      setSelectedRoom(initialRoom);
+      if (onRoomOpened) onRoomOpened();
+    }
+  }, [initialRoom]);
+
+  // 내가 참여한 대화방 목록
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, "chatRooms"),
+      where("members", "array-contains", user.uid),
+      orderBy("lastAt", "desc"),
+    );
+    const unsub = onSnapshot(q, async (snap) => {
+      const list = await Promise.all(
+        snap.docs.map(async (d) => {
+          const data = d.data();
+          const otherId = data.members.find((m) => m !== user.uid);
+          const otherSnap = await getDoc(doc(db, "users", otherId));
+          const other = otherSnap.exists()
+            ? otherSnap.data()
+            : { displayName: "알 수 없음", photoURL: null };
+          return {
+            roomId: d.id,
+            otherId,
+            otherName: other.nickname || other.displayName || "알 수 없음",
+            otherPhoto: other.photoURL,
+            lastMsg: data.lastMsg || "",
+            lastAt: data.lastAt,
+            unread: data.unreadCount?.[user.uid] || 0,
+          };
+        }),
+      );
+      setRooms(list);
+      setLoading(false);
+    });
+    return unsub;
+  }, [user]);
+
+  // 선택된 방 메세지 구독
+  useEffect(() => {
+    if (!selectedRoom) return;
+    const q = query(
+      collection(db, "chatRooms", selectedRoom.roomId, "messages"),
+      orderBy("createdAt"),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // 읽음 처리
+      updateDoc(doc(db, "chatRooms", selectedRoom.roomId), {
+        [`unreadCount.${user.uid}`]: 0,
+      }).catch(() => {});
+    });
+    return unsub;
+  }, [selectedRoom]);
+
+  // 자동 스크롤
+  useEffect(() => {
+    const el = document.getElementById("msg-bottom");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!text.trim() || !selectedRoom) return;
+    const msg = text.trim();
+    setText("");
+    await addDoc(collection(db, "chatRooms", selectedRoom.roomId, "messages"), {
+      text: msg,
+      senderId: user.uid,
+      senderName: user.displayName,
+      createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, "chatRooms", selectedRoom.roomId), {
+      lastMsg: msg,
+      lastAt: serverTimestamp(),
+      [`unreadCount.${selectedRoom.otherId}`]: increment(1),
+    });
+  };
+
+  if (!user)
+    return (
+      <div
+        style={{ textAlign: "center", padding: "80px 20px", color: "#94a3b8" }}
+      >
+        <div style={{ fontSize: 40, marginBottom: 12 }}>💌</div>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>
+          로그인 후 메세지를 사용할 수 있어요
+        </div>
+      </div>
+    );
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 20 }}>
+        💌 메세지
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          height: 560,
+          background: "#fff",
+          borderRadius: 20,
+          border: "1.5px solid #e8ecf3",
+          overflow: "hidden",
+        }}
+      >
+        {/* 왼쪽: 대화 목록 */}
+        <div
+          style={{
+            width: 260,
+            flexShrink: 0,
+            borderRight: "1.5px solid #f1f5f9",
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 18px",
+              fontWeight: 800,
+              fontSize: 14,
+              borderBottom: "1.5px solid #f1f5f9",
+              color: "#1e3a6e",
+            }}
+          >
+            대화 목록
+          </div>
+          {loading ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#94a3b8" }}>
+              <Spinner />
+            </div>
+          ) : rooms.length === 0 ? (
+            <div
+              style={{
+                padding: "40px 20px",
+                textAlign: "center",
+                color: "#94a3b8",
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 10 }}>💬</div>
+              <div style={{ fontSize: 13 }}>
+                아직 대화가 없어요
+                <br />
+                상대방 프로필에서
+                <br />
+                메세지를 보내보세요
+              </div>
+            </div>
+          ) : (
+            rooms.map((r) => (
+              <div
+                key={r.roomId}
+                onClick={() => setSelectedRoom(r)}
+                style={{
+                  padding: "14px 18px",
+                  cursor: "pointer",
+                  background:
+                    selectedRoom?.roomId === r.roomId ? "#eff4ff" : "#fff",
+                  borderBottom: "1px solid #f8fafc",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  transition: "background 0.15s",
+                }}
+              >
+                <Avatar
+                  user={{ photoURL: r.otherPhoto, displayName: r.otherName }}
+                  size={36}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "#1a2340",
+                      }}
+                    >
+                      {r.otherName}
+                    </span>
+                    {r.unread > 0 && (
+                      <span
+                        style={{
+                          background: "#2d5be3",
+                          color: "#fff",
+                          borderRadius: 10,
+                          fontSize: 11,
+                          padding: "1px 7px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {r.unread}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#94a3b8",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      marginTop: 2,
+                    }}
+                  >
+                    {r.lastMsg || "대화를 시작해보세요"}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* 오른쪽: 채팅창 */}
+        {!selectedRoom ? (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#94a3b8",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>
+                대화를 선택하세요
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+            }}
+          >
+            {/* 채팅 헤더 */}
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1.5px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Avatar
+                user={{
+                  photoURL: selectedRoom.otherPhoto,
+                  displayName: selectedRoom.otherName,
+                }}
+                size={32}
+              />
+              <span style={{ fontWeight: 800, fontSize: 15, color: "#1a2340" }}>
+                {selectedRoom.otherName}
+              </span>
+            </div>
+            {/* 메세지 목록 */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "16px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              {messages.length === 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "#94a3b8",
+                    fontSize: 13,
+                    marginTop: 40,
+                  }}
+                >
+                  첫 메세지를 보내보세요 👋
+                </div>
+              )}
+              {messages.map((m) => {
+                const isMine = m.senderId === user.uid;
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: isMine ? "flex-end" : "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        maxWidth: "70%",
+                        padding: "10px 14px",
+                        borderRadius: isMine
+                          ? "18px 18px 4px 18px"
+                          : "18px 18px 18px 4px",
+                        background: isMine
+                          ? "linear-gradient(135deg,#1e3a6e,#2d5be3)"
+                          : "#f1f5f9",
+                        color: isMine ? "#fff" : "#1a2340",
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                  </div>
+                );
+              })}
+              <div id="msg-bottom" />
+            </div>
+            {/* 입력창 */}
+            <div
+              style={{
+                padding: "12px 16px",
+                borderTop: "1.5px solid #f1f5f9",
+                display: "flex",
+                gap: 10,
+              }}
+            >
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && !e.shiftKey && sendMessage()
+                }
+                placeholder="메세지를 입력하세요..."
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1.5px solid #e2e8f0",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                전송
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 대화방 생성 또는 기존 방 반환
+async function getOrCreateRoom(myUid, otherUid) {
+  const roomId = [myUid, otherUid].sort().join("_");
+  const roomRef = doc(db, "chatRooms", roomId);
+  const snap = await getDoc(roomRef);
+  if (!snap.exists()) {
+    await setDoc(roomRef, {
+      members: [myUid, otherUid],
+      lastMsg: "",
+      lastAt: serverTimestamp(),
+      unreadCount: { [myUid]: 0, [otherUid]: 0 },
+    });
+  }
+  return roomId;
 }
 
 // ── 관리자 인증 페이지 ────────────────────────────────────
@@ -1279,43 +1832,38 @@ function AdminPage({ user }) {
 }
 
 // ── 글쓰기 모달 ───────────────────────────────────────────
-function WriteModal({ user, onClose, editPost = null }) {
+function WriteModal({ user, onClose, editPost = null, boardType = "free" }) {
   const [form, setForm] = useState({
-    programType: editPost?.programType || "중기",
-    cohort: editPost?.cohort?.toString() || "",
-    region: editPost?.region || "",
-    category: editPost?.category || "후기",
     title: editPost?.title || "",
     content: editPost?.content || "",
     tags: editPost?.tags?.join(", ") || "",
   });
+  const [profile, setProfile] = useState(null);
   const [isAnonymous, setIsAnonymous] = useState(
     editPost?.isAnonymous || false,
   );
   const [loading, setLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const currentProgram = PROGRAM_TYPES[form.programType];
-  const cohort = currentProgram.cohorts.find(
-    (c) => c.id === Number(form.cohort),
-  );
+
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.uid)).then((d) => {
+      if (d.exists()) setProfile(d.data());
+    });
+  }, [user]);
 
   const submit = async () => {
-    if (
-      !form.cohort ||
-      !form.region ||
-      !form.title.trim() ||
-      !form.content.trim()
-    ) {
-      alert("모든 항목을 입력해주세요");
+    if (!form.title.trim() || !form.content.trim()) {
+      alert("제목과 내용을 입력해주세요");
       return;
     }
     setLoading(true);
     try {
       const data = {
-        programType: form.programType,
-        cohort: Number(form.cohort),
-        region: form.region,
-        category: form.category,
+        programType: profile?.programType || null,
+        cohort: profile?.cohort || null,
+        region: profile?.region || null,
+        boardType: editPost?.boardType || boardType,
         title: form.title.trim(),
         content: form.content.trim(),
         tags: form.tags
@@ -1399,102 +1947,22 @@ function WriteModal({ user, onClose, editPost = null }) {
             gap: 16,
           }}
         >
-          <div>
-            <label style={labelStyle}>프로그램 유형 *</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {Object.entries(PROGRAM_TYPES).map(([type, val]) => (
-                <button
-                  key={type}
-                  onClick={() => {
-                    set("programType", type);
-                    set("cohort", "");
-                    set("region", "");
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "10px 6px",
-                    borderRadius: 12,
-                    border: "1.5px solid",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: form.programType === type ? 800 : 400,
-                    borderColor:
-                      form.programType === type ? val.color : "#e2e8f0",
-                    background:
-                      form.programType === type ? val.lightBg : "#fff",
-                    color: form.programType === type ? val.color : "#64748b",
-                    textAlign: "center",
-                  }}
-                >
-                  {type}
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>
-                    {val.duration}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
           <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+            style={{
+              background: "#f8fafc",
+              borderRadius: 12,
+              padding: "12px 16px",
+              border: "1.5px solid #e8ecf3",
+              fontSize: 13,
+              color: "#475569",
+            }}
           >
-            <div>
-              <label style={labelStyle}>기수 *</label>
-              <select
-                value={form.cohort}
-                onChange={(e) => {
-                  set("cohort", e.target.value);
-                  set("region", "");
-                }}
-                style={inputStyle}
-              >
-                <option value="">선택</option>
-                {currentProgram.cohorts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>지역 *</label>
-              <select
-                value={form.region}
-                onChange={(e) => set("region", e.target.value)}
-                style={inputStyle}
-                disabled={!cohort}
-              >
-                <option value="">선택</option>
-                {(cohort?.regions || []).map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style={labelStyle}>카테고리</label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => set("category", cat)}
-                  style={{
-                    padding: "6px 16px",
-                    borderRadius: 20,
-                    border: "1.5px solid",
-                    borderColor: form.category === cat ? "#2d5be3" : "#e2e8f0",
-                    background: form.category === cat ? "#eff4ff" : "#fff",
-                    color: form.category === cat ? "#1e3a6e" : "#64748b",
-                    fontWeight: form.category === cat ? 700 : 400,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+            <span style={{ fontWeight: 700, color: "#1e3a6e", marginRight: 6 }}>
+              내 프로필 정보로 자동 표시:
+            </span>
+            {profile?.programType
+              ? `${profile.programType} · ${profile.cohort}기 · ${profile.region || "지역 미설정"}`
+              : "프로필에서 프로그램 유형/기수/지역을 설정하면 글에 자동으로 표시됩니다"}
           </div>
           <div>
             <label style={labelStyle}>제목 *</label>
@@ -1626,7 +2094,6 @@ function WriteModal({ user, onClose, editPost = null }) {
 
 // ── 게시글 카드 ───────────────────────────────────────────
 function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
-  const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
   const [liked, setLiked] = useState(false);
   const isAuthor = user?.uid === post.authorId;
@@ -1665,30 +2132,6 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
         e.currentTarget.style.borderColor = "#e8ecf3";
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          gap: 7,
-          marginBottom: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        {pt && (
-          <Badge bg={pt.color} color="#fff">
-            {post.programType}
-          </Badge>
-        )}
-        <Badge bg="#1e3a6e" color="#fff">
-          {post.cohort}기
-        </Badge>
-        <Badge bg="#f0f4ff" color="#3b5bdb">
-          {post.region}
-        </Badge>
-        <Badge bg={cat.bg} color={cat.text}>
-          {post.category}
-        </Badge>
-      </div>
       <div
         style={{
           fontWeight: 800,
@@ -1775,7 +2218,23 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
               cursor: post.isAnonymous ? "default" : "pointer",
             }}
           >
-            {post.authorName} · {timeAgo(post.createdAt)}
+            {post.authorName}
+            {!post.isAnonymous && post.programType && (
+              <span style={{ color: "#b0bcd4", margin: "0 4px" }}>
+                ·{" "}
+                <span
+                  style={{ color: pt?.color || "#64748b", fontWeight: 600 }}
+                >
+                  {post.programType}
+                </span>
+                {post.cohort && ` ${post.cohort}기`}
+                {post.region && ` · ${post.region}`}
+              </span>
+            )}
+            <span style={{ color: "#cbd5e1" }}>
+              {" "}
+              · {timeAgo(post.createdAt)}
+            </span>
             {post.updatedAt && (
               <span style={{ color: "#cbd5e1" }}> (수정됨)</span>
             )}
@@ -1783,22 +2242,41 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {isAuthor && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(post);
-              }}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "#94a3b8",
-                fontSize: 12,
-                padding: 0,
-              }}
-            >
-              수정
-            </button>
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(post);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  fontSize: 12,
+                  padding: 0,
+                }}
+              >
+                수정
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("글을 삭제할까요?")) return;
+                  await deleteDoc(doc(db, "posts", post.id));
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#fca5a5",
+                  fontSize: 12,
+                  padding: 0,
+                }}
+              >
+                삭제
+              </button>
+            </>
           )}
           <button
             onClick={handleLike}
@@ -1822,11 +2300,10 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
 }
 
 // ── 상세 모달 ─────────────────────────────────────────────
-function PostModal({ post, user, onClose, onEdit }) {
+function PostModal({ post, user, onClose, onEdit, onProfileClick }) {
   const [comments, setComments] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
 
   useEffect(() => {
@@ -1893,29 +2370,6 @@ function PostModal({ post, user, onClose, onEdit }) {
         <div style={{ padding: "28px 32px 0" }}>
           <div
             style={{
-              display: "flex",
-              gap: 7,
-              marginBottom: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            {pt && (
-              <Badge bg={pt.color} color="#fff">
-                {post.programType}
-              </Badge>
-            )}
-            <Badge bg="#1e3a6e" color="#fff">
-              {post.cohort}기
-            </Badge>
-            <Badge bg="#f0f4ff" color="#3b5bdb">
-              {post.region}
-            </Badge>
-            <Badge bg={cat.bg} color={cat.text}>
-              {post.category}
-            </Badge>
-          </div>
-          <div
-            style={{
               fontWeight: 900,
               fontSize: 20,
               color: "#1a2340",
@@ -1935,15 +2389,39 @@ function PostModal({ post, user, onClose, onEdit }) {
               borderBottom: "1px solid #f1f5f9",
             }}
           >
-            <Avatar
-              user={{
-                photoURL: post.isAnonymous ? null : post.authorPhoto,
-                displayName: post.authorName,
+            <div
+              onClick={() => {
+                if (!post.isAnonymous) {
+                  onClose();
+                  onProfileClick?.(post.authorId);
+                }
               }}
-              size={32}
-            />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
+              style={{ cursor: post.isAnonymous ? "default" : "pointer" }}
+            >
+              <Avatar
+                user={{
+                  photoURL: post.isAnonymous ? null : post.authorPhoto,
+                  displayName: post.authorName,
+                }}
+                size={32}
+              />
+            </div>
+            <div
+              onClick={() => {
+                if (!post.isAnonymous) {
+                  onClose();
+                  onProfileClick?.(post.authorId);
+                }
+              }}
+              style={{ cursor: post.isAnonymous ? "default" : "pointer" }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: post.isAnonymous ? "#334155" : "#1e3a6e",
+                }}
+              >
                 {post.authorName}
                 {post.isAnonymous && (
                   <span
@@ -1957,6 +2435,23 @@ function PostModal({ post, user, onClose, onEdit }) {
                     }}
                   >
                     익명
+                  </span>
+                )}
+                {!post.isAnonymous && post.programType && (
+                  <span
+                    style={{ fontSize: 12, fontWeight: 500, marginLeft: 8 }}
+                  >
+                    <span
+                      style={{ color: pt?.color || "#64748b", fontWeight: 700 }}
+                    >
+                      {post.programType}
+                    </span>
+                    {post.cohort && (
+                      <span style={{ color: "#94a3b8" }}> {post.cohort}기</span>
+                    )}
+                    {post.region && (
+                      <span style={{ color: "#94a3b8" }}> · {post.region}</span>
+                    )}
                   </span>
                 )}
               </div>
@@ -1978,24 +2473,45 @@ function PostModal({ post, user, onClose, onEdit }) {
               }}
             >
               {user?.uid === post.authorId && (
-                <button
-                  onClick={() => {
-                    onClose();
-                    onEdit(post);
-                  }}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 8,
-                    border: "1.5px solid #e2e8f0",
-                    background: "#f8fafc",
-                    color: "#64748b",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  ✏️ 수정
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onEdit(post);
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      border: "1.5px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✏️ 수정
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm("글을 삭제할까요?")) return;
+                      await deleteDoc(doc(db, "posts", post.id));
+                      onClose();
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      border: "1.5px solid #fecaca",
+                      background: "#fff5f5",
+                      color: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🗑️ 삭제
+                  </button>
+                </>
               )}
               <span>❤️ {post.likes}</span>
               <span>💬 {post.commentCount || 0}</span>
@@ -2180,13 +2696,13 @@ function Sidebar({
     <div
       onClick={onClick}
       style={{
-        padding: "9px 18px",
+        padding: "7px 12px",
         cursor: "pointer",
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: active ? 700 : 400,
         color: active ? color : "#475569",
         background: active ? lightBg : "transparent",
-        borderLeft: `3px solid ${active ? color : "transparent"}`,
+        borderLeft: `2px solid ${active ? color : "transparent"}`,
         transition: "all 0.15s",
       }}
     >
@@ -2195,28 +2711,28 @@ function Sidebar({
   );
 
   return (
-    <div style={{ width: 210, flexShrink: 0 }}>
+    <div style={{ width: 150, flexShrink: 0 }}>
       <div
         style={{
           background: "#fff",
-          borderRadius: 16,
+          borderRadius: 12,
           border: "1.5px solid #e8ecf3",
           overflow: "hidden",
-          marginBottom: 14,
+          marginBottom: 10,
         }}
       >
         <div
           style={{
             background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
-            padding: "14px 18px",
+            padding: "10px 12px",
             color: "#fff",
-            fontWeight: 800,
-            fontSize: 13,
+            fontWeight: 700,
+            fontSize: 12,
           }}
         >
-          프로그램 유형
+          프로그램
         </div>
-        <div style={{ padding: "6px 0" }}>
+        <div style={{ padding: "4px 0" }}>
           {menuItem("전체", !selectedProgramType, () => {
             setSelectedProgramType(null);
             setSelectedCohort(null);
@@ -2224,7 +2740,7 @@ function Sidebar({
           })}
           {Object.entries(PROGRAM_TYPES).map(([key, val]) =>
             menuItem(
-              `${key} · ${val.duration}`,
+              key,
               selectedProgramType === key,
               () => {
                 setSelectedProgramType(key);
@@ -2241,26 +2757,26 @@ function Sidebar({
         <div
           style={{
             background: "#fff",
-            borderRadius: 16,
+            borderRadius: 12,
             border: "1.5px solid #e8ecf3",
             overflow: "hidden",
-            marginBottom: 14,
+            marginBottom: 10,
           }}
         >
           <div
             style={{
               background: program.gradient,
-              padding: "14px 18px",
+              padding: "10px 12px",
               color: "#fff",
-              fontWeight: 800,
-              fontSize: 13,
+              fontWeight: 700,
+              fontSize: 12,
             }}
           >
             {selectedProgramType} 기수
           </div>
-          <div style={{ maxHeight: 220, overflowY: "auto", padding: "6px 0" }}>
+          <div style={{ maxHeight: 180, overflowY: "auto", padding: "4px 0" }}>
             {menuItem(
-              "전체 기수",
+              "전체",
               !selectedCohort,
               () => {
                 setSelectedCohort(null);
@@ -2288,7 +2804,7 @@ function Sidebar({
         <div
           style={{
             background: "#fff",
-            borderRadius: 16,
+            borderRadius: 12,
             border: "1.5px solid #e8ecf3",
             overflow: "hidden",
           }}
@@ -2296,17 +2812,17 @@ function Sidebar({
           <div
             style={{
               background: program.gradient,
-              padding: "14px 18px",
+              padding: "10px 12px",
               color: "#fff",
-              fontWeight: 800,
-              fontSize: 13,
+              fontWeight: 700,
+              fontSize: 12,
             }}
           >
             {selectedCohort}기 지역
           </div>
-          <div style={{ padding: "6px 0" }}>
+          <div style={{ padding: "4px 0" }}>
             {menuItem(
-              "전체 지역",
+              "전체",
               !selectedRegion,
               () => setSelectedRegion(null),
               program.color,
@@ -2460,15 +2976,22 @@ export default function WestApp() {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [search, setSearch] = useState("");
-  const [showWrite, setShowWrite] = useState(false);
+  const [showWrite, setShowWrite] = useState(null); // null or boardType string
+  const [boardTab, setBoardTab] = useState("free");
   const [showProfile, setShowProfile] = useState(null); // uid 저장
+  const [openChatRoom, setOpenChatRoom] = useState(null);
   const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
 
+  const handleStartChat = (roomId, otherId, otherName, otherPhoto) => {
+    setOpenChatRoom({ roomId, otherId, otherName, otherPhoto });
+    setTab("messages");
+  };
+
   const handleEdit = (post) => {
     setEditPost(post);
-    setShowWrite(true);
+    setShowWrite(post.boardType || "free");
   };
 
   // 반응형 화면 크기 감지
@@ -2630,16 +3153,15 @@ export default function WestApp() {
                 }}
                 className="nav-subtitle"
               >
-                Work & English Study in the US
+                Work, English Study, travel in the US
               </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {[
               ["home", "🏠", "홈"],
-              ["community", "💬", "커뮤니티"],
-              ["info", "📋", "기수정보"],
-              ["tips", "💡", "꿀팁"],
+              ["board", "📋", "게시판"],
+              ...(user ? [["messages", "💌", "메세지"]] : []),
               ...(user?.uid === ADMIN_UID ? [["admin", "🔐", "관리자"]] : []),
             ].map(([key, icon, label]) => (
               <button
@@ -2662,21 +3184,6 @@ export default function WestApp() {
           </div>
           {user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                onClick={() => setShowWrite(true)}
-                style={{
-                  padding: isMobile ? "8px 12px" : "8px 16px",
-                  borderRadius: 10,
-                  background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
-                  color: "#fff",
-                  border: "none",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                {isMobile ? "✏️" : "✏️ 글쓰기"}
-              </button>
               <div
                 onClick={() => setShowProfile(user.uid)}
                 style={{ cursor: "pointer" }}
@@ -2732,102 +3239,11 @@ export default function WestApp() {
       {/* HOME */}
       {tab === "home" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 20px" }}>
-          <div
-            style={{
-              background: "linear-gradient(135deg,#1e3a6e,#1565c0,#2d5be3)",
-              borderRadius: isMobile ? 16 : 24,
-              padding: isMobile ? "32px 20px" : "48px 40px",
-              color: "#fff",
-              marginBottom: 32,
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                right: -40,
-                top: -40,
-                width: 220,
-                height: 220,
-                background: "rgba(255,255,255,0.04)",
-                borderRadius: "50%",
-              }}
-            />
-            <div
-              style={{
-                fontSize: isMobile ? 10 : 12,
-                letterSpacing: "0.2em",
-                opacity: 0.7,
-                marginBottom: 12,
-                fontWeight: 600,
-              }}
-            >
-              🇺🇸 WEST PROGRAM COMMUNITY
-            </div>
-            <div
-              style={{
-                fontWeight: 900,
-                fontSize: "clamp(22px,4vw,34px)",
-                lineHeight: 1.25,
-                marginBottom: 14,
-              }}
-            >
-              WEST 정보,
-              <br />
-              이제 한 곳에서 찾으세요
-            </div>
-            <div
-              style={{
-                fontSize: isMobile ? 13 : 15,
-                opacity: 0.85,
-                lineHeight: 1.75,
-                marginBottom: 28,
-              }}
-            >
-              {isMobile ? (
-                "단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을 선배들이 직접 공유하는 커뮤니티입니다"
-              ) : (
-                <>
-                  단기·중기·장기 기수별 합격 후기, 생활 정보, 꿀팁을
-                  <br />
-                  선배들이 직접 공유하는 커뮤니티입니다
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setTab("community")}
-                style={{
-                  padding: "11px 26px",
-                  borderRadius: 12,
-                  background: "#fff",
-                  color: "#1e3a6e",
-                  fontWeight: 800,
-                  fontSize: 14,
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                커뮤니티 보기 →
-              </button>
-              <button
-                onClick={() => (user ? setShowWrite(true) : login())}
-                style={{
-                  padding: "11px 26px",
-                  borderRadius: 12,
-                  background: "rgba(255,255,255,0.15)",
-                  color: "#fff",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  border: "1.5px solid rgba(255,255,255,0.3)",
-                  cursor: "pointer",
-                }}
-              >
-                {user ? "후기 작성하기" : "Google로 시작하기"}
-              </button>
-            </div>
-          </div>
+          <HeroBanner
+            user={user}
+            onCommunity={() => setTab("board")}
+            onWrite={() => (user ? setShowWrite("free") : login())}
+          />
 
           <div
             style={{
@@ -2839,7 +3255,7 @@ export default function WestApp() {
           >
             {[
               ["📝", posts.length, "총 게시글"],
-              ["🎓", "단기 10기 · 중기 14기 · 장기 10기", "진행중인 기수"],
+              ["🎓", "단기 14기 · 중기 14기 · 장기 22기", "진행중인 기수"],
               ["📍", "파견지역", "뉴욕, LA, 시카고, 시애틀, 보스턴, 워싱턴DC"],
             ].map(([icon, val, label]) => (
               <div
@@ -2899,7 +3315,8 @@ export default function WestApp() {
       )}
 
       {/* COMMUNITY */}
-      {tab === "community" && (
+      {/* 게시판 */}
+      {tab === "board" && (
         <div
           style={{
             maxWidth: 1200,
@@ -2910,201 +3327,345 @@ export default function WestApp() {
             alignItems: "flex-start",
           }}
         >
+          {/* 왼쪽 게시판 사이드바 */}
           {!isMobile && (
-            <Sidebar
-              selectedProgramType={selectedProgramType}
-              setSelectedProgramType={setSelectedProgramType}
-              selectedCohort={selectedCohort}
-              setSelectedCohort={setSelectedCohort}
-              selectedRegion={selectedRegion}
-              setSelectedRegion={setSelectedRegion}
-            />
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
+                width: 200,
+                flexShrink: 0,
                 background: "#fff",
                 borderRadius: 16,
-                padding: "16px 18px",
                 border: "1.5px solid #e8ecf3",
-                marginBottom: 14,
+                overflow: "hidden",
+                position: "sticky",
+                top: 80,
               }}
             >
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="🔍 제목, 내용, 작성자 검색..."
+              <div
                 style={{
-                  width: "100%",
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1.5px solid #e2e8f0",
+                  background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                  padding: "16px 18px",
+                  color: "#fff",
+                  fontWeight: 800,
                   fontSize: 14,
-                  marginBottom: 12,
-                  boxSizing: "border-box",
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  gap: 7,
-                  flexWrap: "wrap",
-                  alignItems: "center",
                 }}
               >
-                {["전체", ...CATEGORIES].map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    style={{
-                      padding: "5px 14px",
-                      borderRadius: 20,
-                      border: "1.5px solid",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: selectedCategory === cat ? 700 : 400,
-                      borderColor:
-                        selectedCategory === cat ? "#2d5be3" : "#e2e8f0",
-                      background: selectedCategory === cat ? "#eff4ff" : "#fff",
-                      color: selectedCategory === cat ? "#1e3a6e" : "#64748b",
-                    }}
-                  >
-                    {cat}
-                  </button>
-                ))}
-                <span
-                  style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8" }}
-                >
-                  {filtered.length}개의 글
-                </span>
+                📋 게시판
               </div>
+              {[
+                ["free", "💬", "자유게시판"],
+                ["info-board", "📢", "정보게시판"],
+                ["review", "⭐", "WEST 후기"],
+                ["cohort", "🎓", "기수별"],
+                ["inquiry", "❓", "문의사항"],
+              ].map(([key, icon, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setBoardTab(key)}
+                  style={{
+                    width: "100%",
+                    padding: "12px 18px",
+                    border: "none",
+                    background: boardTab === key ? "#eff4ff" : "#fff",
+                    color: boardTab === key ? "#1e3a6e" : "#475569",
+                    fontWeight: boardTab === key ? 700 : 400,
+                    fontSize: 14,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    borderBottom: "1px solid #f1f5f9",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  {icon} {label}
+                </button>
+              ))}
             </div>
-            {postsLoading ? (
-              <Spinner />
-            ) : filtered.length === 0 ? (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "60px 20px",
-                  color: "#94a3b8",
-                  background: "#fff",
-                  borderRadius: 16,
-                  border: "1.5px solid #e8ecf3",
-                }}
-              >
-                <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
-                <div style={{ fontWeight: 600 }}>게시글이 없어요</div>
-                <div style={{ fontSize: 13, marginTop: 6 }}>
-                  첫 번째 글을 작성해보세요!
+          )}
+
+          {/* 모바일 게시판 탭 */}
+          {isMobile && (
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                overflowX: "auto",
+                marginBottom: 16,
+                paddingBottom: 4,
+                width: "100%",
+              }}
+            >
+              {[
+                ["free", "💬", "자유"],
+                ["info-board", "📢", "정보"],
+                ["review", "⭐", "후기"],
+                ["cohort", "🎓", "기수별"],
+                ["inquiry", "❓", "문의"],
+              ].map(([key, icon, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setBoardTab(key)}
+                  style={{
+                    flexShrink: 0,
+                    padding: "7px 14px",
+                    borderRadius: 20,
+                    border: "1.5px solid",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: boardTab === key ? 700 : 400,
+                    borderColor: boardTab === key ? "#2d5be3" : "#e2e8f0",
+                    background: boardTab === key ? "#eff4ff" : "#fff",
+                    color: boardTab === key ? "#1e3a6e" : "#64748b",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 오른쪽 콘텐츠 */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {boardTab === "free" && (
+              <BoardPage
+                title="💬 자유게시판"
+                desc="자유롭게 이야기를 나눠요"
+                boardType="free"
+                user={user}
+                posts={posts}
+                postsLoading={postsLoading}
+                setSelectedPost={setSelectedPost}
+                handleEdit={handleEdit}
+                setShowProfile={setShowProfile}
+                onWrite={() => (user ? setShowWrite("free") : login())}
+                isMobile={isMobile}
+              />
+            )}
+            {boardTab === "info-board" && (
+              <BoardPage
+                title="📢 정보게시판"
+                desc="WEST 프로그램 관련 정보를 공유해요"
+                boardType="info-board"
+                user={user}
+                posts={posts}
+                postsLoading={postsLoading}
+                setSelectedPost={setSelectedPost}
+                handleEdit={handleEdit}
+                setShowProfile={setShowProfile}
+                onWrite={() => (user ? setShowWrite("info-board") : login())}
+                isMobile={isMobile}
+              />
+            )}
+            {boardTab === "review" && (
+              <BoardPage
+                title="⭐ WEST 후기"
+                desc="선배들의 생생한 후기를 확인해요"
+                boardType="review"
+                user={user}
+                posts={posts}
+                postsLoading={postsLoading}
+                setSelectedPost={setSelectedPost}
+                handleEdit={handleEdit}
+                setShowProfile={setShowProfile}
+                onWrite={() => (user ? setShowWrite("review") : login())}
+                isMobile={isMobile}
+              />
+            )}
+            {boardTab === "cohort" && (
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 20, marginBottom: 4 }}>
+                  🎓 기수별 게시판
+                </div>
+                <div
+                  style={{ color: "#64748b", fontSize: 14, marginBottom: 16 }}
+                >
+                  기간·기수·지역별로 필터링해서 찾아보세요
+                </div>
+                <div
+                  style={{ display: "flex", gap: 16, alignItems: "flex-start" }}
+                >
+                  <Sidebar
+                    selectedProgramType={selectedProgramType}
+                    setSelectedProgramType={setSelectedProgramType}
+                    selectedCohort={selectedCohort}
+                    setSelectedCohort={setSelectedCohort}
+                    selectedRegion={selectedRegion}
+                    setSelectedRegion={setSelectedRegion}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        background: "#fff",
+                        borderRadius: 16,
+                        padding: "16px 18px",
+                        border: "1.5px solid #e8ecf3",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="🔍 검색..."
+                        style={{
+                          width: "100%",
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1.5px solid #e2e8f0",
+                          fontSize: 14,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+                    {postsLoading ? (
+                      <Spinner />
+                    ) : filtered.length === 0 ? (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "60px 20px",
+                          color: "#94a3b8",
+                          background: "#fff",
+                          borderRadius: 16,
+                          border: "1.5px solid #e8ecf3",
+                        }}
+                      >
+                        <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+                        <div style={{ fontWeight: 600 }}>게시글이 없어요</div>
+                      </div>
+                    ) : (
+                      filtered.map((p) => (
+                        <PostCard
+                          key={p.id}
+                          post={p}
+                          user={user}
+                          onClick={setSelectedPost}
+                          onEdit={handleEdit}
+                          onProfileClick={setShowProfile}
+                        />
+                      ))
+                    )}
+                    <button
+                      onClick={() => (user ? setShowWrite("cohort") : login())}
+                      style={{
+                        marginTop: 20,
+                        width: "100%",
+                        padding: "14px",
+                        borderRadius: 14,
+                        border: "none",
+                        background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                        color: "#fff",
+                        fontWeight: 800,
+                        fontSize: 15,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {user ? "✏️ 글쓰기" : "로그인 후 글쓰기"}
+                    </button>
+                  </div>
                 </div>
               </div>
-            ) : (
-              filtered.map((p) => (
-                <PostCard
-                  key={p.id}
-                  post={p}
-                  user={user}
-                  onClick={setSelectedPost}
-                  onEdit={handleEdit}
-                  onProfileClick={setShowProfile}
-                />
-              ))
+            )}
+            {boardTab === "inquiry" && (
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 20, marginBottom: 4 }}>
+                  ❓ 문의사항
+                </div>
+                <div
+                  style={{ color: "#64748b", fontSize: 14, marginBottom: 20 }}
+                >
+                  앱 관련 문의사항을 남겨주세요. 관리자가 확인 후 답변드려요
+                </div>
+                <div
+                  style={{
+                    background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                    borderRadius: 16,
+                    padding: "20px 24px",
+                    color: "#fff",
+                    marginBottom: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ fontSize: 32 }}>💌</div>
+                  <div>
+                    <div
+                      style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}
+                    >
+                      관리자에게 직접 문의하세요
+                    </div>
+                    <div style={{ fontSize: 13, opacity: 0.85 }}>
+                      버그 신고, 기능 제안, 기타 문의 모두 환영해요
+                    </div>
+                  </div>
+                </div>
+                {postsLoading ? (
+                  <Spinner />
+                ) : posts.filter((p) => p.boardType === "inquiry").length ===
+                  0 ? (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "60px 20px",
+                      color: "#94a3b8",
+                      background: "#fff",
+                      borderRadius: 16,
+                      border: "1.5px solid #e8ecf3",
+                    }}
+                  >
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
+                    <div style={{ fontWeight: 600 }}>
+                      아직 문의사항이 없어요
+                    </div>
+                  </div>
+                ) : (
+                  posts
+                    .filter((p) => p.boardType === "inquiry")
+                    .map((p) => (
+                      <PostCard
+                        key={p.id}
+                        post={p}
+                        user={user}
+                        onClick={setSelectedPost}
+                        onEdit={handleEdit}
+                        onProfileClick={setShowProfile}
+                      />
+                    ))
+                )}
+                <button
+                  onClick={() => (user ? setShowWrite("inquiry") : login())}
+                  style={{
+                    marginTop: 20,
+                    width: "100%",
+                    padding: "14px",
+                    borderRadius: 14,
+                    border: "none",
+                    background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    fontSize: 15,
+                    cursor: "pointer",
+                  }}
+                >
+                  {user ? "✏️ 문의사항 작성하기" : "로그인 후 문의하기"}
+                </button>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* INFO - 단기/중기/장기 3열 */}
-      {tab === "info" && (
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>
-          <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
-            📋 기수별 정보
-          </div>
-          <div style={{ color: "#64748b", fontSize: 14, marginBottom: 24 }}>
-            단기·중기·장기 프로그램별로 1기부터 22기까지 확인하세요. 기수를
-            클릭하면 해당 게시판으로 이동해요.
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
-              gap: 20,
-            }}
-          >
-            {["단기", "중기", "장기"].map((type) => (
-              <CohortColumn
-                key={type}
-                type={type}
-                posts={posts}
-                onSelect={handleCohortSelect}
-              />
-            ))}
-          </div>
-        </div>
+      {tab === "messages" && (
+        <MessagesPage
+          user={user}
+          initialRoom={openChatRoom}
+          onRoomOpened={() => setOpenChatRoom(null)}
+        />
       )}
 
       {/* TIPS */}
-      {tab === "tips" && (
-        <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
-          <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
-            💡 꿀팁 & 합격 후기
-          </div>
-          <div style={{ color: "#64748b", fontSize: 14, marginBottom: 24 }}>
-            WEST 선배들이 직접 공유한 팁과 후기만 모았어요
-          </div>
-          {postsLoading ? (
-            <Spinner />
-          ) : (
-            posts
-              .filter((p) => p.category === "팁" || p.category === "후기")
-              .sort((a, b) => (b.likes || 0) - (a.likes || 0))
-              .map((p) => (
-                <PostCard
-                  key={p.id}
-                  post={p}
-                  user={user}
-                  onClick={setSelectedPost}
-                  onEdit={handleEdit}
-                  onProfileClick={setShowProfile}
-                />
-              ))
-          )}
-          <div
-            style={{
-              background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
-              borderRadius: 20,
-              padding: "32px",
-              color: "#fff",
-              textAlign: "center",
-              marginTop: 24,
-            }}
-          >
-            <div style={{ fontSize: 30, marginBottom: 10 }}>🙋</div>
-            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
-              당신의 경험을 나눠주세요!
-            </div>
-            <div style={{ opacity: 0.85, fontSize: 14, marginBottom: 20 }}>
-              후배 지원자들에게 큰 힘이 됩니다
-            </div>
-            <button
-              onClick={() => (user ? setShowWrite(true) : login())}
-              style={{
-                padding: "12px 28px",
-                borderRadius: 12,
-                background: "#fff",
-                color: "#1e3a6e",
-                fontWeight: 800,
-                fontSize: 14,
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              {user ? "꿀팁 공유하기" : "로그인 후 공유하기"}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ADMIN */}
       {tab === "admin" && <AdminPage user={user} />}
 
@@ -3112,8 +3673,9 @@ export default function WestApp() {
         <WriteModal
           user={user}
           editPost={editPost}
+          boardType={showWrite}
           onClose={() => {
-            setShowWrite(false);
+            setShowWrite(null);
             setEditPost(null);
           }}
         />
@@ -3132,6 +3694,7 @@ export default function WestApp() {
           currentUser={user}
           targetUid={showProfile}
           onClose={() => setShowProfile(null)}
+          onStartChat={handleStartChat}
         />
       )}
 
@@ -3150,7 +3713,7 @@ export default function WestApp() {
           WEST 커뮤니티
         </div>
         <div>
-          Work & English Study in the US · 단기·중기·장기 비공식 커뮤니티
+          Work, English Study, travel in the US · 단기·중기·장기 비공식 커뮤니티
         </div>
         <div style={{ marginTop: 6, fontSize: 11 }}>
           Firebase Firestore 실시간 연동 · Google 소셜 로그인
