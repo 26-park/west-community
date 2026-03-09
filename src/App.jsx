@@ -13,13 +13,16 @@ import {
   addDoc,
   query,
   orderBy,
+  where,
   serverTimestamp,
   doc,
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   increment,
   onSnapshot,
+  getDocs,
 } from "firebase/firestore";
 
 import westLogo from "./assets/logo.png";
@@ -473,7 +476,7 @@ const ADMIN_UID = "6CgsiLklPVWTa2eyL911DgAmG6g1"; // Firebase Auth에서 본인 
 
 // ── 프로필 모달 ───────────────────────────────────────────
 // targetUid: 볼 대상 uid / currentUser: 로그인한 사람
-function ProfileModal({ currentUser, targetUid, onClose }) {
+function ProfileModal({ currentUser, targetUid, onClose, onStartChat }) {
   const isMyProfile = currentUser?.uid === targetUid;
   const [profile, setProfile] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -870,6 +873,41 @@ function ProfileModal({ currentUser, targetUid, onClose }) {
                   )}
                 </div>
               )}
+              {/* 상대 프로필 - 메세지 보내기 */}
+              {!isMyProfile && currentUser && (
+                <button
+                  onClick={async () => {
+                    const roomId = await getOrCreateRoom(
+                      currentUser.uid,
+                      targetUid,
+                    );
+                    onClose();
+                    if (onStartChat)
+                      onStartChat(
+                        roomId,
+                        targetUid,
+                        profile?.nickname ||
+                          profile?.displayName ||
+                          "알 수 없음",
+                        profile?.photoURL,
+                      );
+                  }}
+                  style={{
+                    width: "100%",
+                    marginTop: 8,
+                    padding: "11px",
+                    borderRadius: 12,
+                    border: "none",
+                    background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  💌 메세지 보내기
+                </button>
+              )}
             </>
           ) : (
             /* ── 편집 모드 (본인만) ── */
@@ -1182,6 +1220,404 @@ function BoardPage({
   );
 }
 
+// ── 메세지 페이지 ─────────────────────────────────────────
+function MessagesPage({ user, initialRoom, onRoomOpened }) {
+  const [rooms, setRooms] = useState([]);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // initialRoom이 들어오면 자동 선택
+  useEffect(() => {
+    if (initialRoom) {
+      setSelectedRoom(initialRoom);
+      if (onRoomOpened) onRoomOpened();
+    }
+  }, [initialRoom]);
+
+  // 내가 참여한 대화방 목록
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, "chatRooms"),
+      where("members", "array-contains", user.uid),
+      orderBy("lastAt", "desc"),
+    );
+    const unsub = onSnapshot(q, async (snap) => {
+      const list = await Promise.all(
+        snap.docs.map(async (d) => {
+          const data = d.data();
+          const otherId = data.members.find((m) => m !== user.uid);
+          const otherSnap = await getDoc(doc(db, "users", otherId));
+          const other = otherSnap.exists()
+            ? otherSnap.data()
+            : { displayName: "알 수 없음", photoURL: null };
+          return {
+            roomId: d.id,
+            otherId,
+            otherName: other.nickname || other.displayName || "알 수 없음",
+            otherPhoto: other.photoURL,
+            lastMsg: data.lastMsg || "",
+            lastAt: data.lastAt,
+            unread: data.unreadCount?.[user.uid] || 0,
+          };
+        }),
+      );
+      setRooms(list);
+      setLoading(false);
+    });
+    return unsub;
+  }, [user]);
+
+  // 선택된 방 메세지 구독
+  useEffect(() => {
+    if (!selectedRoom) return;
+    const q = query(
+      collection(db, "chatRooms", selectedRoom.roomId, "messages"),
+      orderBy("createdAt"),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // 읽음 처리
+      updateDoc(doc(db, "chatRooms", selectedRoom.roomId), {
+        [`unreadCount.${user.uid}`]: 0,
+      }).catch(() => {});
+    });
+    return unsub;
+  }, [selectedRoom]);
+
+  // 자동 스크롤
+  useEffect(() => {
+    const el = document.getElementById("msg-bottom");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!text.trim() || !selectedRoom) return;
+    const msg = text.trim();
+    setText("");
+    await addDoc(collection(db, "chatRooms", selectedRoom.roomId, "messages"), {
+      text: msg,
+      senderId: user.uid,
+      senderName: user.displayName,
+      createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, "chatRooms", selectedRoom.roomId), {
+      lastMsg: msg,
+      lastAt: serverTimestamp(),
+      [`unreadCount.${selectedRoom.otherId}`]: increment(1),
+    });
+  };
+
+  if (!user)
+    return (
+      <div
+        style={{ textAlign: "center", padding: "80px 20px", color: "#94a3b8" }}
+      >
+        <div style={{ fontSize: 40, marginBottom: 12 }}>💌</div>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>
+          로그인 후 메세지를 사용할 수 있어요
+        </div>
+      </div>
+    );
+
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 20px" }}>
+      <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 20 }}>
+        💌 메세지
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          height: 560,
+          background: "#fff",
+          borderRadius: 20,
+          border: "1.5px solid #e8ecf3",
+          overflow: "hidden",
+        }}
+      >
+        {/* 왼쪽: 대화 목록 */}
+        <div
+          style={{
+            width: 260,
+            flexShrink: 0,
+            borderRight: "1.5px solid #f1f5f9",
+            overflowY: "auto",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 18px",
+              fontWeight: 800,
+              fontSize: 14,
+              borderBottom: "1.5px solid #f1f5f9",
+              color: "#1e3a6e",
+            }}
+          >
+            대화 목록
+          </div>
+          {loading ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#94a3b8" }}>
+              <Spinner />
+            </div>
+          ) : rooms.length === 0 ? (
+            <div
+              style={{
+                padding: "40px 20px",
+                textAlign: "center",
+                color: "#94a3b8",
+              }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 10 }}>💬</div>
+              <div style={{ fontSize: 13 }}>
+                아직 대화가 없어요
+                <br />
+                상대방 프로필에서
+                <br />
+                메세지를 보내보세요
+              </div>
+            </div>
+          ) : (
+            rooms.map((r) => (
+              <div
+                key={r.roomId}
+                onClick={() => setSelectedRoom(r)}
+                style={{
+                  padding: "14px 18px",
+                  cursor: "pointer",
+                  background:
+                    selectedRoom?.roomId === r.roomId ? "#eff4ff" : "#fff",
+                  borderBottom: "1px solid #f8fafc",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  transition: "background 0.15s",
+                }}
+              >
+                <Avatar
+                  user={{ photoURL: r.otherPhoto, displayName: r.otherName }}
+                  size={36}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "#1a2340",
+                      }}
+                    >
+                      {r.otherName}
+                    </span>
+                    {r.unread > 0 && (
+                      <span
+                        style={{
+                          background: "#2d5be3",
+                          color: "#fff",
+                          borderRadius: 10,
+                          fontSize: 11,
+                          padding: "1px 7px",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {r.unread}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#94a3b8",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      marginTop: 2,
+                    }}
+                  >
+                    {r.lastMsg || "대화를 시작해보세요"}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* 오른쪽: 채팅창 */}
+        {!selectedRoom ? (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#94a3b8",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>
+                대화를 선택하세요
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+            }}
+          >
+            {/* 채팅 헤더 */}
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1.5px solid #f1f5f9",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Avatar
+                user={{
+                  photoURL: selectedRoom.otherPhoto,
+                  displayName: selectedRoom.otherName,
+                }}
+                size={32}
+              />
+              <span style={{ fontWeight: 800, fontSize: 15, color: "#1a2340" }}>
+                {selectedRoom.otherName}
+              </span>
+            </div>
+            {/* 메세지 목록 */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "16px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              {messages.length === 0 && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "#94a3b8",
+                    fontSize: 13,
+                    marginTop: 40,
+                  }}
+                >
+                  첫 메세지를 보내보세요 👋
+                </div>
+              )}
+              {messages.map((m) => {
+                const isMine = m.senderId === user.uid;
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: isMine ? "flex-end" : "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        maxWidth: "70%",
+                        padding: "10px 14px",
+                        borderRadius: isMine
+                          ? "18px 18px 4px 18px"
+                          : "18px 18px 18px 4px",
+                        background: isMine
+                          ? "linear-gradient(135deg,#1e3a6e,#2d5be3)"
+                          : "#f1f5f9",
+                        color: isMine ? "#fff" : "#1a2340",
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                  </div>
+                );
+              })}
+              <div id="msg-bottom" />
+            </div>
+            {/* 입력창 */}
+            <div
+              style={{
+                padding: "12px 16px",
+                borderTop: "1.5px solid #f1f5f9",
+                display: "flex",
+                gap: 10,
+              }}
+            >
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && !e.shiftKey && sendMessage()
+                }
+                placeholder="메세지를 입력하세요..."
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "1.5px solid #e2e8f0",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "linear-gradient(135deg,#1e3a6e,#2d5be3)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                전송
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 대화방 생성 또는 기존 방 반환
+async function getOrCreateRoom(myUid, otherUid) {
+  const roomId = [myUid, otherUid].sort().join("_");
+  const roomRef = doc(db, "chatRooms", roomId);
+  const snap = await getDoc(roomRef);
+  if (!snap.exists()) {
+    await setDoc(roomRef, {
+      members: [myUid, otherUid],
+      lastMsg: "",
+      lastAt: serverTimestamp(),
+      unreadCount: { [myUid]: 0, [otherUid]: 0 },
+    });
+  }
+  return roomId;
+}
+
 // ── 관리자 인증 페이지 ────────────────────────────────────
 function AdminPage({ user }) {
   const [requests, setRequests] = useState([]);
@@ -1398,39 +1834,35 @@ function AdminPage({ user }) {
 // ── 글쓰기 모달 ───────────────────────────────────────────
 function WriteModal({ user, onClose, editPost = null, boardType = "free" }) {
   const [form, setForm] = useState({
-    programType: editPost?.programType || "중기",
-    cohort: editPost?.cohort?.toString() || "",
-    region: editPost?.region || "",
     title: editPost?.title || "",
     content: editPost?.content || "",
     tags: editPost?.tags?.join(", ") || "",
   });
+  const [profile, setProfile] = useState(null);
   const [isAnonymous, setIsAnonymous] = useState(
     editPost?.isAnonymous || false,
   );
   const [loading, setLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const currentProgram = PROGRAM_TYPES[form.programType];
-  const cohort = currentProgram.cohorts.find(
-    (c) => c.id === Number(form.cohort),
-  );
+
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.uid)).then((d) => {
+      if (d.exists()) setProfile(d.data());
+    });
+  }, [user]);
 
   const submit = async () => {
-    if (
-      !form.cohort ||
-      !form.region ||
-      !form.title.trim() ||
-      !form.content.trim()
-    ) {
-      alert("모든 항목을 입력해주세요");
+    if (!form.title.trim() || !form.content.trim()) {
+      alert("제목과 내용을 입력해주세요");
       return;
     }
     setLoading(true);
     try {
       const data = {
-        programType: form.programType,
-        cohort: Number(form.cohort),
-        region: form.region,
+        programType: profile?.programType || null,
+        cohort: profile?.cohort || null,
+        region: profile?.region || null,
         boardType: editPost?.boardType || boardType,
         title: form.title.trim(),
         content: form.content.trim(),
@@ -1515,78 +1947,22 @@ function WriteModal({ user, onClose, editPost = null, boardType = "free" }) {
             gap: 16,
           }}
         >
-          <div>
-            <label style={labelStyle}>프로그램 유형 *</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {Object.entries(PROGRAM_TYPES).map(([type, val]) => (
-                <button
-                  key={type}
-                  onClick={() => {
-                    set("programType", type);
-                    set("cohort", "");
-                    set("region", "");
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "10px 6px",
-                    borderRadius: 12,
-                    border: "1.5px solid",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    fontWeight: form.programType === type ? 800 : 400,
-                    borderColor:
-                      form.programType === type ? val.color : "#e2e8f0",
-                    background:
-                      form.programType === type ? val.lightBg : "#fff",
-                    color: form.programType === type ? val.color : "#64748b",
-                    textAlign: "center",
-                  }}
-                >
-                  {type}
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>
-                    {val.duration}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
           <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+            style={{
+              background: "#f8fafc",
+              borderRadius: 12,
+              padding: "12px 16px",
+              border: "1.5px solid #e8ecf3",
+              fontSize: 13,
+              color: "#475569",
+            }}
           >
-            <div>
-              <label style={labelStyle}>기수 *</label>
-              <select
-                value={form.cohort}
-                onChange={(e) => {
-                  set("cohort", e.target.value);
-                  set("region", "");
-                }}
-                style={inputStyle}
-              >
-                <option value="">선택</option>
-                {currentProgram.cohorts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>지역 *</label>
-              <select
-                value={form.region}
-                onChange={(e) => set("region", e.target.value)}
-                style={inputStyle}
-                disabled={!cohort}
-              >
-                <option value="">선택</option>
-                {(cohort?.regions || []).map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <span style={{ fontWeight: 700, color: "#1e3a6e", marginRight: 6 }}>
+              내 프로필 정보로 자동 표시:
+            </span>
+            {profile?.programType
+              ? `${profile.programType} · ${profile.cohort}기 · ${profile.region || "지역 미설정"}`
+              : "프로필에서 프로그램 유형/기수/지역을 설정하면 글에 자동으로 표시됩니다"}
           </div>
           <div>
             <label style={labelStyle}>제목 *</label>
@@ -1718,7 +2094,6 @@ function WriteModal({ user, onClose, editPost = null, boardType = "free" }) {
 
 // ── 게시글 카드 ───────────────────────────────────────────
 function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
-  const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
   const [liked, setLiked] = useState(false);
   const isAuthor = user?.uid === post.authorId;
@@ -1757,27 +2132,6 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
         e.currentTarget.style.borderColor = "#e8ecf3";
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          gap: 7,
-          marginBottom: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        {pt && (
-          <Badge bg={pt.color} color="#fff">
-            {post.programType}
-          </Badge>
-        )}
-        <Badge bg="#1e3a6e" color="#fff">
-          {post.cohort}기
-        </Badge>
-        <Badge bg="#f0f4ff" color="#3b5bdb">
-          {post.region}
-        </Badge>
-      </div>
       <div
         style={{
           fontWeight: 800,
@@ -1864,7 +2218,23 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
               cursor: post.isAnonymous ? "default" : "pointer",
             }}
           >
-            {post.authorName} · {timeAgo(post.createdAt)}
+            {post.authorName}
+            {!post.isAnonymous && post.programType && (
+              <span style={{ color: "#b0bcd4", margin: "0 4px" }}>
+                ·{" "}
+                <span
+                  style={{ color: pt?.color || "#64748b", fontWeight: 600 }}
+                >
+                  {post.programType}
+                </span>
+                {post.cohort && ` ${post.cohort}기`}
+                {post.region && ` · ${post.region}`}
+              </span>
+            )}
+            <span style={{ color: "#cbd5e1" }}>
+              {" "}
+              · {timeAgo(post.createdAt)}
+            </span>
             {post.updatedAt && (
               <span style={{ color: "#cbd5e1" }}> (수정됨)</span>
             )}
@@ -1872,22 +2242,41 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {isAuthor && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(post);
-              }}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "#94a3b8",
-                fontSize: 12,
-                padding: 0,
-              }}
-            >
-              수정
-            </button>
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(post);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  fontSize: 12,
+                  padding: 0,
+                }}
+              >
+                수정
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("글을 삭제할까요?")) return;
+                  await deleteDoc(doc(db, "posts", post.id));
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#fca5a5",
+                  fontSize: 12,
+                  padding: 0,
+                }}
+              >
+                삭제
+              </button>
+            </>
           )}
           <button
             onClick={handleLike}
@@ -1911,11 +2300,10 @@ function PostCard({ post, user, onClick, onEdit, onProfileClick }) {
 }
 
 // ── 상세 모달 ─────────────────────────────────────────────
-function PostModal({ post, user, onClose, onEdit }) {
+function PostModal({ post, user, onClose, onEdit, onProfileClick }) {
   const [comments, setComments] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const cat = CAT_STYLE[post.category] || {};
   const pt = PROGRAM_TYPES[post.programType];
 
   useEffect(() => {
@@ -1982,26 +2370,6 @@ function PostModal({ post, user, onClose, onEdit }) {
         <div style={{ padding: "28px 32px 0" }}>
           <div
             style={{
-              display: "flex",
-              gap: 7,
-              marginBottom: 14,
-              flexWrap: "wrap",
-            }}
-          >
-            {pt && (
-              <Badge bg={pt.color} color="#fff">
-                {post.programType}
-              </Badge>
-            )}
-            <Badge bg="#1e3a6e" color="#fff">
-              {post.cohort}기
-            </Badge>
-            <Badge bg="#f0f4ff" color="#3b5bdb">
-              {post.region}
-            </Badge>
-          </div>
-          <div
-            style={{
               fontWeight: 900,
               fontSize: 20,
               color: "#1a2340",
@@ -2021,15 +2389,39 @@ function PostModal({ post, user, onClose, onEdit }) {
               borderBottom: "1px solid #f1f5f9",
             }}
           >
-            <Avatar
-              user={{
-                photoURL: post.isAnonymous ? null : post.authorPhoto,
-                displayName: post.authorName,
+            <div
+              onClick={() => {
+                if (!post.isAnonymous) {
+                  onClose();
+                  onProfileClick?.(post.authorId);
+                }
               }}
-              size={32}
-            />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
+              style={{ cursor: post.isAnonymous ? "default" : "pointer" }}
+            >
+              <Avatar
+                user={{
+                  photoURL: post.isAnonymous ? null : post.authorPhoto,
+                  displayName: post.authorName,
+                }}
+                size={32}
+              />
+            </div>
+            <div
+              onClick={() => {
+                if (!post.isAnonymous) {
+                  onClose();
+                  onProfileClick?.(post.authorId);
+                }
+              }}
+              style={{ cursor: post.isAnonymous ? "default" : "pointer" }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: post.isAnonymous ? "#334155" : "#1e3a6e",
+                }}
+              >
                 {post.authorName}
                 {post.isAnonymous && (
                   <span
@@ -2043,6 +2435,23 @@ function PostModal({ post, user, onClose, onEdit }) {
                     }}
                   >
                     익명
+                  </span>
+                )}
+                {!post.isAnonymous && post.programType && (
+                  <span
+                    style={{ fontSize: 12, fontWeight: 500, marginLeft: 8 }}
+                  >
+                    <span
+                      style={{ color: pt?.color || "#64748b", fontWeight: 700 }}
+                    >
+                      {post.programType}
+                    </span>
+                    {post.cohort && (
+                      <span style={{ color: "#94a3b8" }}> {post.cohort}기</span>
+                    )}
+                    {post.region && (
+                      <span style={{ color: "#94a3b8" }}> · {post.region}</span>
+                    )}
                   </span>
                 )}
               </div>
@@ -2064,24 +2473,45 @@ function PostModal({ post, user, onClose, onEdit }) {
               }}
             >
               {user?.uid === post.authorId && (
-                <button
-                  onClick={() => {
-                    onClose();
-                    onEdit(post);
-                  }}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 8,
-                    border: "1.5px solid #e2e8f0",
-                    background: "#f8fafc",
-                    color: "#64748b",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  ✏️ 수정
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onEdit(post);
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      border: "1.5px solid #e2e8f0",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✏️ 수정
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm("글을 삭제할까요?")) return;
+                      await deleteDoc(doc(db, "posts", post.id));
+                      onClose();
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      border: "1.5px solid #fecaca",
+                      background: "#fff5f5",
+                      color: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🗑️ 삭제
+                  </button>
+                </>
               )}
               <span>❤️ {post.likes}</span>
               <span>💬 {post.commentCount || 0}</span>
@@ -2549,9 +2979,15 @@ export default function WestApp() {
   const [showWrite, setShowWrite] = useState(null); // null or boardType string
   const [boardTab, setBoardTab] = useState("free");
   const [showProfile, setShowProfile] = useState(null); // uid 저장
+  const [openChatRoom, setOpenChatRoom] = useState(null);
   const [editPost, setEditPost] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+
+  const handleStartChat = (roomId, otherId, otherName, otherPhoto) => {
+    setOpenChatRoom({ roomId, otherId, otherName, otherPhoto });
+    setTab("messages");
+  };
 
   const handleEdit = (post) => {
     setEditPost(post);
@@ -2725,6 +3161,7 @@ export default function WestApp() {
             {[
               ["home", "🏠", "홈"],
               ["board", "📋", "게시판"],
+              ...(user ? [["messages", "💌", "메세지"]] : []),
               ...(user?.uid === ADMIN_UID ? [["admin", "🔐", "관리자"]] : []),
             ].map(([key, icon, label]) => (
               <button
@@ -3220,6 +3657,14 @@ export default function WestApp() {
         </div>
       )}
 
+      {tab === "messages" && (
+        <MessagesPage
+          user={user}
+          initialRoom={openChatRoom}
+          onRoomOpened={() => setOpenChatRoom(null)}
+        />
+      )}
+
       {/* TIPS */}
       {/* ADMIN */}
       {tab === "admin" && <AdminPage user={user} />}
@@ -3249,6 +3694,7 @@ export default function WestApp() {
           currentUser={user}
           targetUid={showProfile}
           onClose={() => setShowProfile(null)}
+          onStartChat={handleStartChat}
         />
       )}
 
